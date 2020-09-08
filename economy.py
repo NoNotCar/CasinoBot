@@ -67,6 +67,11 @@ def register_1v1(game,winners,losers,draw=False):
         w.set_elo(game,new_ratings[0][n])
     for n,l in enumerate(losers):
         l.set_elo(game,new_ratings[1][n])
+def register_ranked(game,p_order):
+    new_ratings = trueskill.rate([[p.get_elo(game) for p in ps] for ps in p_order],list(range(len(p_order))))
+    for n,ps in enumerate(p_order):
+        for m,p in enumerate(ps):
+            p.set_elo(game,new_ratings[n][m])
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

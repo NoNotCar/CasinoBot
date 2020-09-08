@@ -1,9 +1,10 @@
 import discord
 from discord.ext import commands
-from economy import get_user, register_1v1
+from economy import get_user, register_1v1, register_ranked
 from asyncio import create_task
 import random
 import trueskill
+import typing
 dib_games=[]
 fake_names=["Amelia","Bob","Callum","Derek","Emily","Fergus","Gordon","Harry","Isobel","John","Kallum","Larry",
            "Moonpig","Norbert","Olivia","Possum","Quentin","Rusty","Scrappy","The Boulder","Umbrella","Venus","Wendy",
@@ -152,6 +153,14 @@ class BaseGame(object):
         self.done=True
         if winners and losers:
             register_1v1(self.name,[w.user for w in winners],[l.user for l in losers],draw)
+            if self.bot:
+                await self.bot.get_cog("Economy").elo(self.channel,self.name)
+        else:
+            await self.channel.send("No elo change - nobody or everybody won!")
+    async def end_ranked(self,porder:typing.List[typing.List[BasePlayer]]):
+        self.done=True
+        if len(porder)>1:
+            register_ranked(self.name,[[p.user for p in ps] for ps in porder])
             if self.bot:
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
         else:

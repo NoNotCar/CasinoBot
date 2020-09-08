@@ -25,8 +25,8 @@ class BombGame(dib.BaseGame):
     max_players = 20
     name="bomb"
     async def run(self):
-        original_players = self.players[:]
         await self.channel.send("PLAYER ORDER: "+" ,".join(p.name for p in self.players))
+        p_order=[]
         while len(self.players)>1:
             try:
                 await wait_for(self.run_round(),random.uniform(30,60))
@@ -39,9 +39,11 @@ class BombGame(dib.BaseGame):
                 else:
                     await self.channel.send("%s has sadly died - :exploding_head:" % exploded.name)
                     self.players.remove(exploded)
+                    p_order.append([exploded])
         await self.channel.send("THE GAME IS OVER. %s WON AND RECEIVES 10c!" % self.players[0].name)
         self.players[0].user.update_balance(10)
-        await self.end_game(self.players,[p for p in original_players if p not in self.players])
+        p_order.append([self.players[0]])
+        await self.end_ranked(p_order)
     async def run_round(self):
         frag=random.choice(list(fragments))
         rt=random.choice(rtypes)
