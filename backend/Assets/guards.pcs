@@ -1,0 +1,11 @@
+Bishop:B:Praise God
+BishopX:BW:Bishop that can also move 1 space orthogonally
+Man:FW:Non-royal King
+Bede:BD:Bishop that also leaps 2 orthogonally
+Mime:M:Mimics the movement of your opponent's last moved piece
+Archer:FW!D!H:Moves 1 square in any direction or shoots 2-3 orthogonally
+Antibody:fBbR[flips]:Forwards Bishop, Backwards Rook
+SwitchWitch:S:Switches places with any friendly piece
+Spiny:FW[deathtouch]:Moves like king, deathtouch
+IronFerz:F[iron]:Moves 1 diagonally, invincible
+Womble:zF:Zigzagging bishop

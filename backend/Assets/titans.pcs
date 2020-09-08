@@ -1,0 +1,17 @@
+Queen:BR:God save the queen
+Marshal:NR:Knight+Rook
+Princess:NB:Knight+Bishop
+Amazon:NBR:Queen+Knight
+Griffin:F-oR:Moves 1 diagonally then Rook outwards
+Aanca:W-oB:Moves 1 orthogonally then Bishop outwards
+Ninja:TaW:Can teleport to any empty square or capture orthogonally adjacent pieces
+Virus:vFvW:Moves like king and converts non-viral pieces to viruses instead of capturing them
+IronWazir:W[iron]:Moves 1 orthogonally, indestructible
+Withdrawer:?R?B:Queen that captures by moving away from an adjacent piece
+Bull:rRrB:Queen that captures by moving up to a piece
+RoyalQueen:RB[royal]:Don't lose it!
+RookCore:R-moR:Moves like a rook and then may move like a rook again but not capture
+Ship:fRsRB:Queen that can't move directly backwards
+Palace:DANFW:Moves to the 5x5 square surrounding it
+QueenBee:B3R3:Moves up to 3 as queen
+Demon:zFzW:Crooked Bishop + Crooked Rook

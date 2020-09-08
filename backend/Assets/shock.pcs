@@ -1,0 +1,11 @@
+Knight:N:Not just a horse
+HalfDuck:HFD:Jumps 2-3 orthogonally or 1 diagonally
+Crab:fnNbwN:Forwards narrow knight, backwards wide knight
+Frog:FWjDjA:Moves 1 square in any direction or jumps one piece in any direction
+Unicorn:NA:Knight that can leap 2 diagonally
+Reindeer:NF:Knight that can move 1 diagonally
+Ring:ND:Knight that can leap 2 orthogonally
+MrDice:%W%D:Jumps up to 2 spaces orthogonally, promotes to random titan after capturing
+LongLegs:FAsDsW:Jumps up to 2 spaces diagonally or sideways
+Jouster:NfR:Knight that can move forwards as rook
+ShitKnight:FnN:Knight with limited sideways range

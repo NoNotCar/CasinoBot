@@ -1,0 +1,7 @@
+token.py
+*.pyc
+music_cache
+users.pickle
+temp.png
+music.cache
+.idea

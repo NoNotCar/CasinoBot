@@ -1,0 +1,18 @@
+Rook:R:No castling allowed
+RookX:RF:Rook that can also move 1 space diagonally
+Fortress:AND:Moves to the square ring surrounding it
+Star:mRaB:Rook movement, Bishop capture
+Star2:mBaR:Bishop movement, Rook capture
+DoubleRook:sW-R:Moves 1 space sideways then like a rook
+VortexL:W-<R:Moves 1 space orthogonally then left like a rook
+VortexR:W->R:Moves 1 space orthogonally then right like a rook
+Interceptor:sR-nR:Moves like a rook horizontally then vertically
+SwitchRook:SR:Rook that can switch with friendly pieces
+LeapingRook:D-m|R:Jumps 2 orthogonally then straight on as rook (move only)
+Ant:W-W-W:Moves up to 3 orthogonally, can turn
+Boat:fRsRfB[promotes=Ship]:Queen that can't move backwards, promotes to Ship
+Artillery:W!fN:Moves one orthogonally or fires forwards in knight pattern
+SpearRook:rR:Rook that captures by moving up to pieces
+EdgeHog:eRW:Moves like a rook, but only one square if not on a board edge
+FatRook:$R:Moves like a rook but can't move to squares if the square beyond is not free
+Zebra:zW:Zigzagging rook
