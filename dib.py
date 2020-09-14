@@ -1,10 +1,11 @@
 import discord
 from discord.ext import commands
 from economy import get_user, register_1v1, register_ranked
-from asyncio import create_task
+import asyncio
 import random
 import trueskill
 import typing
+from collections import defaultdict
 dib_games=[]
 fake_names=["Amelia","Bob","Callum","Derek","Emily","Fergus","Gordon","Harry","Isobel","John","Kallum","Larry",
            "Moonpig","Norbert","Olivia","Possum","Quentin","Rusty","Scrappy","The Boulder","Umbrella","Venus","Wendy",
@@ -27,6 +28,20 @@ def thea(name:str,singular:bool) -> str:
     elif name[0] in "aeiou":
         return "an %s" % name
     return "a %s" % name
+
+async def gather(coros:typing.List[typing.Coroutine])->typing.List:
+    return await asyncio.gather(*coros)
+
+async def smart_gather(coros:typing.List[typing.Coroutine],keys:typing.List)->typing.Dict:
+    results=await gather(coros)
+    return {k:results[n] for n,k in enumerate(keys)}
+
+async def chain(coros):
+    return [await coro for coro in coros]
+
+async def smart_chain(coros:typing.List[typing.Coroutine],keys:typing.List)->typing.Dict:
+    results=await chain(coros)
+    return {k:results[n] for n,k in enumerate(keys)}
 class FakeUser(object):
     def __init__(self):
         self.uid=random.randint(0,2**32)
@@ -48,6 +63,7 @@ class FakeUser(object):
     def user(self):
         return self
 class BasePlayer(object):
+    points=0
     def __init__(self,user,fake=False):
         self.user=FakeUser() if fake else user
         self.fake=fake
@@ -79,17 +95,17 @@ class BaseGame(object):
         if isinstance(author,discord.Member):
             user=get_user(author)
             if self.started:
-                await self.channel.send("The game has already started!")
+                await self.send("The game has already started!")
                 return False
             if any(p.user == user for p in self.players) and not TEST_PLAY_URSELF:
-                await self.channel.send("You're already playing!")
+                await self.send("You're already playing!")
                 return False
             elif not user.update_balance(-self.cost):
-                await self.channel.send("You don't have enough money to play!")
+                await self.send("You don't have enough money to play!")
                 return False
             else:
                 self.players.append(self.playerclass(user))
-                await self.channel.send("%s has joined the game! Current players: %s" % (user.nick, len(self.players)))
+                await self.send("%s has joined the game! Current players: %s" % (user.nick, len(self.players)))
                 return True
         else:
             self.players.append(author)
@@ -103,7 +119,7 @@ class BaseGame(object):
     async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False):
         if player.fake:
             return random.sample(options,1)[0]
-        send = player.dm if private else self.channel.send
+        send = player.dm if private else self.send
         option_dict={o.lower():o for o in options}
         if msg:
             if secret:
@@ -120,10 +136,23 @@ class BaseGame(object):
     async def smart_options(self,player,private,options,f,msg="Choose an option: ",secret=False):
         choice=await self.choose_option(player,private,[f(o) for o in options],msg,secret)
         return next(o for o in options if f(o)==choice)
+    async def choose_number(self, player, private, mn, mx, msg=""):
+        return await self.smart_options(player,private,list(range(mn,mx+1)),str,msg,True)
+    async def wait_for_shout(self,msg="Speak now: ",valids=None):
+        if valids is None:
+            valids=self.players
+        if all(p.fake for p in self.players):
+            return random.choice(valids)
+        if msg:
+            await self.send(msg)
+        vdict={p.du:p for p in valids}
+        while True:
+            message = await self.bot.wait_for("message",check=lambda m: m.channel == self.channel and m.author in vdict and m.content)
+            return vdict[message.author]
     async def wait_for_text(self,player,msg="Type something: ",private=True,validation=lambda t: len(t)):
         if player.fake:
             return "poop"
-        send = player.dm if private else self.channel.send
+        send = player.dm if private else self.send
         if msg:
             await send(msg)
         tchannel = player.dmchannel if private else self.channel
@@ -132,11 +161,11 @@ class BaseGame(object):
             if validation(message.content):
                 return message.content
             if "$" not in message.content:
-                await tchannel.send("Not one of the options...")
+                await tchannel.send("Not a valid option...")
     async def wait_for_picture(self,player,msg="Submit an image: ",private=True):
         if player.fake:
             return "https://hips.hearstapps.com/cosmouk.cdnds.net/15/21/nrm_1432138418-o-poop-emoji-ice-cream-facebook.jpg"
-        send = player.dm if private else self.channel.send
+        send = player.dm if private else self.send
         if msg:
             await send(msg)
         tchannel = player.dmchannel if private else self.channel
@@ -156,7 +185,7 @@ class BaseGame(object):
             if self.bot:
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
         else:
-            await self.channel.send("No elo change - nobody or everybody won!")
+            await self.send("No elo change - nobody or everybody won!")
     async def end_ranked(self,porder:typing.List[typing.List[BasePlayer]]):
         self.done=True
         if len(porder)>1:
@@ -164,7 +193,16 @@ class BaseGame(object):
             if self.bot:
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
         else:
-            await self.channel.send("No elo change - nobody or everybody won!")
+            await self.send("No elo change - nobody or everybody won!")
+    async def end_points(self):
+        points=defaultdict(list)
+        for p in self.players:
+            points[p.points].append(p)
+        await self.end_ranked([points[p] for p in sorted(points.keys(),reverse=True)])
+    async def show_scoreboard(self,final=False):
+        await self.send(("FINAL SCOREBOARD:\n" if final else "CURRENT SCOREBOARD:\n")+"\n".join("%s: %s" % (p.name,p.points) for p in self.players))
+    async def send(self,msg:str):
+        await self.channel.send(msg)
 def inheritors(klass):
     subclasses = set()
     work = [klass]
@@ -219,7 +257,7 @@ class Games(commands.Cog):
                 await ctx.send("Not enough players!")
             elif not g.started:
                 g.started=True
-                self.running[g]=create_task(g.run(*modifiers))
+                self.running[g]=asyncio.create_task(g.run(*modifiers))
             else:
                 await ctx.send("Game already started!")
         else:

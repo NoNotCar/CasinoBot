@@ -133,8 +133,6 @@ class Game(dib.BaseGame):
         if chosen=="pass":
             return None
         return next(c for c in choices if c.name.lower() == chosen)
-    async def choose_number(self, player, private, mn, mx, msg=""):
-        return await self.smart_options(player,private,list(range(mn,mx+1)),str,msg,True)
     async def burn(self,player,msg="%s is on fire! Choose a card to discard."):
         if player.hand:
             await self.channel.send(msg % player.name)
