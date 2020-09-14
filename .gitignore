@@ -1,4 +1,4 @@
-token.py
+bottoken.py
 *.pyc
 music_cache
 users.pickle

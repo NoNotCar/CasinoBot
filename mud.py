@@ -35,6 +35,8 @@ class ActionManager(object):
             return
         await Look().execute(self.game,self.player)
         while True:
+            if self.player.dead:
+                return
             actions = self.game.common_actions+self.player.area.special_actions
             if self.player.role:
                 actions.extend(self.player.role.special_actions)
@@ -42,6 +44,8 @@ class ActionManager(object):
                 actions.extend(i.special_actions)
             adict = {a.code: a() for a in actions}
             m=await self.game.bot.wait_for("message",check=lambda m: m.author==self.player.du and m.channel==self.player.dmchannel and m.content)
+            if self.player.dead:
+                return
             split=[s.lower() for s in m.content.split()]
             if action:=adict.get(split[0],False):
                 err=action.valid(self.game,self.player,split[1:])
@@ -96,15 +100,16 @@ class MUD(dib.BaseGame):
                 if am.selected_action:
                     await am.selected_action.execute(am.game,am.player)
             for am in ams:
-                if am.selected_action:
+                if am.selected_action and not am.player.dead:
                     await am.selected_action.post_execute(am.game,am.player)
             for t in tasks:
                 t.cancel()
             if all(p.dead or p.role.did_win(self,p) for p in self.players):
                 break
         await self.channel.send("GAME OVER!")
-        await self.end_game([p for p in self.players if p.role.did_win(self,p)])
-        await self.channel.send("THE ROLES:\n"+"\n".join("%s: %s" % (p.mname,p.role.name) for p in self.players))
+        winners=[p for p in self.players if p.role.did_win(self,p)]
+        await self.end_game(winners)
+        await self.channel.send("THE ROLES:\n"+"\n".join("%s (%s): %s (%s)" % (p.mname,p.name,p.role.name,("won" if p in winners else "lost")) for p in self.players))
     async def kill(self,player:MPlayer,cause="killed",corpse=True):
         player.dead=True
         player.area.entities.remove(player.person)
@@ -212,6 +217,7 @@ class Move(Action):
                 return "You can't go that way!"
         return "Too many arguments!"
     async def execute(self,game:MUD, player:MPlayer):
+        await player.dm("You left the room")
         await self.notify(player,"left the room")
         self.old_area=player.area
         player.area=player.area.links[self.direction]

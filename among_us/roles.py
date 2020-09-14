@@ -31,13 +31,13 @@ class Security(Role):
         if fellows:
             await player.dm("Your fellow security guards are: %s" % dib.smart_list([f.mname for f in fellows]))
     def did_win(self,game:MUD,player:MPlayer):
-        return not player.dead and not any(isinstance(p.role,Impostor) for p in game.players)
+        return not player.dead and not any(isinstance(p.role,Impostor) for p in game.players if not p.dead)
 class CEO(Role):
     name="CEO"
     objective = "You have left incriminating documents in your office. Destroy them by any means possible."
     singular = True
     def did_win(self,game:MUD,player:MPlayer):
-        return not player.dead and not any(isinstance(e,items.Documents) for e in sum(t.items for t in [p for p in game.players]+list(game.all_areas)))
+        return not any(isinstance(e,items.Documents) for e in sum((t.items for t in [p for p in game.players]+list(game.all_areas)),[]))
 
 class Activist(Role):
     name="Activist"

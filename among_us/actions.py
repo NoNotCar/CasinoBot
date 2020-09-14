@@ -16,8 +16,8 @@ class Shoot(mud.TargetedAction):
     async def execute(self,game:mud.MUD, player:mud.MPlayer):
         self.weapon.ammo-=1
         await game.kill(self.target,"shot")
-        await player.dm("BANG! You shot %s!" % player.mname)
-        await self.notify(player,"shot %s" % self.target,[self.target])
+        await player.dm("BANG! You shot %s!" % self.target.mname)
+        await self.notify(player,"shot %s" % self.target.mname,[self.target])
 
 class Broadcast(mud.Say):
     code = "broadcast"
@@ -49,7 +49,7 @@ class Investigate(mud.Action):
         if hasattr(player.role,"complete"):
             player.role.complete=True
             await player.dm("You've investigated a corpse and found many interesting results!")
-    async def valid(self,game:mud.MUD, player:mud.MPlayer,args:typing.List[str]):
+    def valid(self,game:mud.MUD, player:mud.MPlayer,args:typing.List[str]):
         if player.area.name!="Morgue":
             return "You need to be in the morgue to investigate bodies!"
         if any(isinstance(i,mud.Corpse) for i in player.area.entities):

@@ -9,7 +9,7 @@ class AmongUs(mud.MUD):
     max_players = 12
     common_actions = mud.base_actions
     name="amongus"
-    round_time = 30
+    round_time = 60
     def create_world(self):
         cabin=rooms.Cabins()
         c_rooms=[cabin]

@@ -16,7 +16,7 @@ from secret_hitler import game as shitler
 import penultima
 from among_us import game
 import dib
-from token import token
+from bottoken import token
 bot=economy.bot
 @bot.event
 async def on_ready():

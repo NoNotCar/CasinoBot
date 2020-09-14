@@ -25,7 +25,7 @@ def pos_to_v(pos):
     raise ValueError("not a valid pos")
 
 class Penultima(dib.BaseGame):
-    name="penultima"
+    name="chessx"
     max_players = 2
     min_players = 2
     playerclass = Competitor
