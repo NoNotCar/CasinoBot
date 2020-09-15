@@ -1,6 +1,6 @@
-from mud import Role,MUD,MPlayer,Person
+from mud import Role,MUD,MPlayer,Person,Condition
 import dib
-from . import actions, items
+from . import actions, items, rooms
 
 class Impostor(Role):
     name="Impostor"
@@ -56,3 +56,37 @@ class Extrovert(Role):
     objective = "End the game with another person in the same room"
     def did_win(self,game:MUD,player:MPlayer):
         return not player.dead and any(isinstance(e,Person) and e is not player.person for e in player.area.entities)
+
+class Hypochondriac(Role):
+    name="Hypochondriac"
+    objective = "You think you have cancer. Scan yourself in medical by the end of the game."
+    def did_win(self,game:MUD,player:MPlayer):
+        return not player.dead and player.be(Condition.SCANNED)
+
+class Submissive(Role):
+    name="Submissive"
+    objective = "End the game restrained or stunned :smirk:"
+    def did_win(self,game:MUD,player:MPlayer):
+        return not player.dead and player.immobile
+
+class Janitor(Role):
+    name="Janitor"
+    objective = "Remove all items from Storage by the end of the game"
+    def did_win(self,game:MUD,player:MPlayer):
+        return not player.dead and all(not area.items for area in game.all_areas if isinstance(area,rooms.Storage))
+
+class Doctor(Role):
+    name="Doctor"
+    objective = "Ensure all crew members have been scanned in medical by the end of the game"
+
+class SpaceTanner(Role):
+    name="Space Tanner"
+    objective = "You not only hate your job, but also everyone who made you do it. Kill yourself and everyone on this damned ship."
+    def did_win(self,game:MUD,player:MPlayer):
+        return all(p.dead for p in game.players)
+
+class Druggie(Role):
+    name="Drug Addict"
+    objective = "Obtain drugs (probably in Medical) and take them. Warning - make sure you're in a safe place..."
+    def did_win(self,game:MUD,player:MPlayer):
+        return not player.dead and player.be(Condition.DRUGGED)

@@ -2,6 +2,7 @@ import dib
 import typing
 import random
 import asyncio
+import enum
 base_names=["Anna","Bob","Carl","Doris","Emma","Fred","George","Harry","Iris","John","Kyle","Lily","Matt","Nora",
             "Olly","Paul","Quentin","Ralph","Susan","Tom","Ursa","Val","Wally","Xavier","Yasmin","Zach",
             "Alex","Betty","Carol","Dave","Ed","Faith","Gemma","Hazel","Ingrid","Jade","Karen","Liam","Megan","Ned",
@@ -9,6 +10,12 @@ base_names=["Anna","Bob","Carl","Doris","Emma","Fred","George","Harry","Iris","J
 dpairs=[["north","south"],["east","west"]]
 ddict={f:s for f,s in dpairs}
 ddict.update({s:f for f,s in dpairs})
+class Condition(enum.Enum):
+    STUNNED=1
+    RESTRAINED=2
+    BLINDED=3
+    SCANNED=4
+    DRUGGED=5
 class MPlayer(dib.BasePlayer):
     names=base_names
     role=None
@@ -16,23 +23,37 @@ class MPlayer(dib.BasePlayer):
     dead=False
     person=None
     inv_size=2
+    special_desc=""
     def __init__(self,user,fake=False):
         super().__init__(user,fake)
         self.items=[]
+        self.conditions=[]
         self.mname=random.choice(self.names)
         self.names.remove(self.mname)
+    def add_temp_condition(self,condition:Condition,time:int):
+        asyncio.create_task(self._temp_condition(condition,time))
+    async def _temp_condition(self,condition:Condition,time:int):
+        if condition not in self.conditions:
+            await self.dm("You have been %s!" % condition.name.lower())
+        self.conditions.append(condition)
+        await asyncio.sleep(time)
+        self.conditions.remove(condition)
+        if condition not in self.conditions and not self.dead:
+            await self.dm("You are no longer %s." % condition.name.lower())
     def __del__(self):
         base_names.append(self.mname)
+    def be(self,condition:Condition):
+        #he really do be stunned
+        return condition in self.conditions
+    @property
+    def immobile(self):
+        return self.dead or self.be(Condition.STUNNED) or self.be(Condition.RESTRAINED)
 class ActionManager(object):
-    selected_action=None
     def __init__(self,player,game):
         self.player=player
         self.game=game
-    async def manage_action_phase(self,r):
-        await self.player.dm("ROUND %s/%s" % (r+1,self.game.game_length))
-        if self.player.dead:
-            await self.player.dm("You are still dead.")
-            return
+    async def manage_action_phase(self):
+        await self.player.dm("You are %s.\n%s MINUTES REMAIN" % (self.player.mname,self.game.game_length))
         await Look().execute(self.game,self.player)
         while True:
             if self.player.dead:
@@ -46,23 +67,22 @@ class ActionManager(object):
             m=await self.game.bot.wait_for("message",check=lambda m: m.author==self.player.du and m.channel==self.player.dmchannel and m.content)
             if self.player.dead:
                 return
-            split=[s.lower() for s in m.content.split()]
-            if action:=adict.get(split[0],False):
-                err=action.valid(self.game,self.player,split[1:])
-                if err is True:
-                    if action.free:
+            if self.player.be(Condition.STUNNED):
+                await self.player.dm("You're stunned! Can't do anything!")
+            else:
+                split=[s.lower() for s in m.content.split()]
+                if action:=adict.get(split[0],False):
+                    err=action.valid(self.game,self.player,split[1:])
+                    if err is True:
                         await action.execute(self.game,self.player)
                     else:
-                        self.selected_action=action
-                        await self.player.dm("Action registered!")
+                        await self.player.dm(err)
                 else:
-                    await self.player.dm(err)
-            else:
-                await self.player.dm("Action not found. Valid actions: "+", ".join(adict.keys()))
+                    await self.player.dm("Action not found. Valid actions: "+", ".join(adict.keys()))
 #Multi-User Dungeons (or, the basis for my new-style games)
 class MUD(dib.BaseGame):
     common_actions=[]
-    round_time=60
+    check_time=10
     min_players = 1
     playerclass = MPlayer
     game_length=10
@@ -84,28 +104,22 @@ class MUD(dib.BaseGame):
     async def run(self,*modifiers):
         await self.channel.send("Character Assignment:\n"+"\n".join("%s: %s" % (p.name,p.mname) for p in self.players))
         start_area=self.create_world()
-        self.roles=self.get_roles()
-        random.shuffle(self.roles)
+        roles=self.get_roles()
+        random.shuffle(roles)
         for n,p in enumerate(self.players):
             p.area=start_area
             p.person=Person(p)
-            p.role=self.roles[n]()
+            p.role=roles[n]()
             await p.role.on_become(self,p)
             start_area.entities.append(p.person)
-        for r in range(self.game_length):
-            ams=[ActionManager(p,self) for p in self.players]
-            tasks=[asyncio.create_task(am.manage_action_phase(r)) for am in ams]
-            await asyncio.sleep(self.round_time)
-            for am in ams:
-                if am.selected_action:
-                    await am.selected_action.execute(am.game,am.player)
-            for am in ams:
-                if am.selected_action and not am.player.dead:
-                    await am.selected_action.post_execute(am.game,am.player)
-            for t in tasks:
-                t.cancel()
+        ams = [ActionManager(p, self) for p in self.players]
+        tasks = [asyncio.create_task(am.manage_action_phase()) for am in ams]
+        for r in range(self.game_length*60//self.check_time):
+            await asyncio.sleep(self.check_time)
             if all(p.dead or p.role.did_win(self,p) for p in self.players):
                 break
+        for t in tasks:
+            t.cancel()
         await self.channel.send("GAME OVER!")
         winners=[p for p in self.players if p.role.did_win(self,p)]
         await self.end_game(winners)
@@ -137,6 +151,9 @@ class Area(object):
             desc+=" There are no items here."
         if ni:=self.nonitems((player.person,)):
             desc += " %s %s here." % (dib.smart_list([i.desc for i in ni]),("is" if len(ni)<2 else "are"))
+            for p in ni:
+                if p.player.special_desc:
+                    desc+=" %s." % p.special_desc
         else:
             desc += " There's nobody else here."
         return desc
@@ -173,7 +190,6 @@ class Corpse(Item):
         self.player=player
         self.desc="%s's corpse" % self.player.mname
 class Action(object):
-    free=True
     code="act"
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
         if args:
@@ -181,12 +197,10 @@ class Action(object):
         return True
     async def execute(self,game:MUD, player:MPlayer):
         pass
-    async def post_execute(self,game:MUD, player:MPlayer):
-        #Called after all non-free actions execute
-        pass
-    async def notify(self,player:MPlayer,msg="did something.",extra=()):
+    async def notify(self,player:MPlayer,msg="did something.",extra=(),area=None):
+        area=area or player.area
         extra=[p.person for p in extra]
-        for p in [p for p in player.area.other_people(player) if p not in extra]:
+        for p in [p for p in area.other_people(player) if p not in extra]:
             await p.player.dm("%s %s" % (player.mname,msg))
 
 class ViewInventory(Action):
@@ -199,16 +213,22 @@ class ViewInventory(Action):
 class Look(Action):
     code="look"
     async def execute(self,game:MUD, player:MPlayer):
-        await player.dm("You are in %s. %s" % (
-        dib.thea(player.area.name, player.area.singular), player.area.full_desc(player)))
+        if player.be(Condition.BLINDED):
+            await player.dm("You look around and see nothing")
+        else:
+            await player.dm("You are in %s. %s" % (
+            dib.thea(player.area.name, player.area.singular), player.area.full_desc(player)))
 class Move(Action):
     code="go"
     direction=None
-    free = False
-    old_area=None
+    speed=10
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
         if not args:
             return "You have to say a direction to move!"
+        if player.immobile:
+            return "You can't move!"
+        if player.be(Condition.BLINDED):
+            return "You can't see where you're going!"
         if len(args)==1:
             self.direction=args[0]
             if self.direction in player.area.links:
@@ -217,14 +237,16 @@ class Move(Action):
                 return "You can't go that way!"
         return "Too many arguments!"
     async def execute(self,game:MUD, player:MPlayer):
-        await player.dm("You left the room")
-        await self.notify(player,"left the room")
-        self.old_area=player.area
-        player.area=player.area.links[self.direction]
-        self.old_area.entities.remove(player.person)
+        old_area=player.area
+        player.area=None
+        old_area.entities.remove(player.person)
+        await player.dm("Moving %s..." % self.direction)
+        await self.notify(player,"left the room",area=old_area)
+        await asyncio.sleep(self.speed)
+        player.area = old_area.links[self.direction]
         player.area.entities.append(player.person)
-    async def post_execute(self,game:MUD, player:MPlayer):
-        await self.notify(player,"entered the room")
+        await self.notify(player, "entered the room")
+        await Look().execute(game,player)
 class Say(Action):
     code="say"
     message=""
@@ -241,6 +263,8 @@ class TargetedAction(Action):
     target=None
     local=True
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
+        if player.be(Condition.BLINDED) and self.local:
+            return "You can't see anyone to do that to"
         valid_targets={p.mname:p for p in game.players if p is not player and (not self.local or p.area==player.area)}
         if args:
             tname=args[0].capitalize()
@@ -267,6 +291,8 @@ class Grab(Action):
     code="grab"
     items=None
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
+        if player.immobile:
+            return "You can't grab stuff atm."
         if len(args)>player.inv_size-len(player.items):
             return "You can't carry that many items! Drop something first."
         if args:
@@ -291,14 +317,18 @@ class Grab(Action):
 class Drag(Action):
     code="drag"
     direction=None
-    free = False
     old_area=None
     target=None
+    speed=20
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
         if not args:
             return "You have to say a direction to move!"
         if len(args)==1:
             return "You have to specify something to drag!"
+        if player.immobile:
+            return "You can't move!"
+        if player.be(Condition.BLINDED):
+            return "You can't see where you're going!"
         if len(args)==2:
             self.direction=args[0]
             if self.direction not in player.area.links:
@@ -311,16 +341,19 @@ class Drag(Action):
             return "Item not found: %s" % target
         return "Too many arguments!"
     async def execute(self,game:MUD, player:MPlayer):
-        if self.target not in player.area.entities:
-            await player.dm("Item was moved before you could drag it! Cancelling movement...")
-            self.target=None
-        else:
-            await self.notify(player,"left the room, dragging %s" % self.target.desc)
-            self.old_area=player.area
-            player.area=player.area.links[self.direction]
-            for e in [player.person,self.target]:
-                self.old_area.entities.remove(e)
-                player.area.entities.append(e)
+        moving = [player.person, self.target]
+        old_area = player.area
+        player.area = None
+        for m in moving:
+            self.old_area.entities.remove(m)
+        await player.dm("Dragging %s %s..." % (self.target.desc,self.direction))
+        await self.notify(player, "left the room, dragging %s" % self.target.desc, area=old_area)
+        await asyncio.sleep(self.speed)
+        player.area = old_area.links[self.direction]
+        for m in moving:
+            player.area.entities.append(m)
+        await self.notify(player, "entered the room, dragging %s" % self.target.desc)
+        await Look().execute(game, player)
     async def post_execute(self,game:MUD, player:MPlayer):
         if self.target:
             await self.notify(player,"entered the room, dragging %s" % self.target.desc)
@@ -328,6 +361,8 @@ class Drop(Action):
     code="drop"
     items=None
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
+        if player.immobile:
+            return "You can't drop stuff atm."
         if args:
             self.items=[]
             for a in args:

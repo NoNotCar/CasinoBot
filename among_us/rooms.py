@@ -26,7 +26,7 @@ class Armoury(Room):
     desc = "The weapons room."
     def __init__(self):
         super().__init__()
-        self.entities.extend([items.Pistol(),items.Pistol(),items.Pistol()])
+        self.entities.extend([items.Pistol(),items.Tazer()])
 
 class Bridge(Room):
     name="Bridge"
@@ -60,9 +60,15 @@ class Security(Room):
     name="Security"
     desc = "You can view where everyone is here."
     special_actions = [actions.Cameras]
-
+class Medical(Room):
+    name="Medical"
+    desc="You can scan yourself here."
+    special_actions = [actions.Scan]
+    def __init__(self):
+        super().__init__()
+        self.entities.append(items.Drugs())
 class Storage(Room):
-    poss_items=[items.DnD,items.Paper,items.CaptainLaptop,items.Pistol,items.Crisps]
+    poss_items=[items.DnD,items.Paper,items.CaptainLaptop,items.Pistol,items.Crisps,items.Tazer,items.Drugs]
     name="Storage Room"
     desc="Filled with various junk."
     def __init__(self):
@@ -70,4 +76,4 @@ class Storage(Room):
         for c in random.choices(self.poss_items,k=3):
             self.entities.append(c())
 
-all_rooms=[Armoury,Bridge,Airlock,Morgue,Office,Security,Storage]
+all_rooms=[Armoury,Bridge,Airlock,Morgue,Office,Security,Storage,Medical]

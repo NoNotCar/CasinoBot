@@ -12,6 +12,10 @@ class Blaster(mud.Item):
     desc="a laser blaster"
     ammo=1
     special_actions = [actions.Shoot]
+class Tazer(mud.Item):
+    name="tazer"
+    desc="a tazer"
+    special_actions = [actions.Taze]
 class Documents(mud.Item):
     name="documents"
     desc="some incriminating documents"
@@ -30,3 +34,7 @@ class DnD(mud.Item):
     name = "dnd"
     desc = "a DnD starter set"
     special_actions = [actions.DnD]
+class Drugs(mud.Item):
+    name="pills"
+    desc = "a bottle of pills"
+    special_actions = [actions.Drugs]
