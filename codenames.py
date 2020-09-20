@@ -49,8 +49,9 @@ class Codenames(dib.BaseGame):
     team_names=["LEFT","RIGHT"]
     min_players = 1
     max_players = 12
+    grid=None
     async def run(self,*modifiers):
-        grid=CodeGrid()
+        self.grid=CodeGrid()
         await self.send("Speak now if you wish to become master of the codes.")
         left_master=await self.wait_for_shout("")
         await self.send("%s has volunteered for left codemaster" % left_master.name)
@@ -63,25 +64,25 @@ class Codenames(dib.BaseGame):
                         (dib.smart_list([p.name for p in left_team]),left_master.name,dib.smart_list([p.name for p in right_team]),right_master.name))
         masters=[left_master,right_master]
         teams=[left_team,right_team]
-        await right_master.dm(grid.render_board(True))
+        await right_master.dm(self.grid.render_board(True))
         turn=0
         while not self.done:
-            await self.send("Current Board:\n"+grid.render_board())
+            await self.send("Current Board:\n"+self.grid.render_board())
             await self.send("%s's codemaster is thinking of a clue..." % self.team_names[turn].capitalize())
-            clue = await self.wait_for_text(masters[turn],"Current Board:\n%s\nSubmit your clue!" % grid.render_board(True),True,grid.is_valid_clue)
+            clue = await self.wait_for_text(masters[turn],"Current Board:\n%s\nSubmit your clue!" % self.grid.render_board(True),True,self.grid.is_valid_clue)
             await self.send("THE CLUE: %s" % clue.upper())
             word,num=clue.lower().split()
             guesses=0
             while num=="0" or num=="inf" or guesses<=int(num):
                 guesses+=1
-                word=await self.choose_option(teams[turn][0],False,grid.leftover_words+["pass"],"%s, you are the spokesperson. Choose a word or pass" % teams[turn][0].name,True)
+                word=await self.choose_option(teams[turn],False,self.grid.leftover_words+["pass"],"Guessing time!" if guesses==1 else "The guessing continues...",True)
                 if word=="pass":
                     break
-                colour=grid.wcols[word]
-                grid.flipped.add(word)
+                colour=self.grid.wcols[word]
+                self.grid.flipped.add(word)
                 if colour in self.team_names:
                     await self.send("%s was a %s team word!" % (word.upper(),colour))
-                    if colour==self.team_names[turn] and not grid.team_won(self.team_names[turn]):
+                    if colour==self.team_names[turn] and not self.grid.team_won(self.team_names[turn]):
                         continue
                 elif colour=="ASSASSIN":
                     await self.send("%s was the assassin! Bad luck!" % word.upper())
@@ -91,14 +92,19 @@ class Codenames(dib.BaseGame):
                     await self.send("%s was neutral." % word.upper())
                 break
 
-            if grid.team_won("LEFT"):
+            if self.grid.team_won("LEFT"):
                 await self.send("LEFT TEAM WINS!")
                 await self.end_game(left_team+[left_master])
-            elif grid.team_won("RIGHT"):
+            elif self.grid.team_won("RIGHT"):
                 await self.send("RIGHT TEAM WINS!")
                 await self.end_game(right_team+[right_master])
             await self.send("Guessing phase over!")
             turn=1-turn
+    async def end_game(self,winners,losers=None,draw=False):
+        self.grid.flipped.clear()
+        await self.send("FINAL GRID\n"+self.grid.render_board(True))
+        await super().end_game(winners,losers,draw)
+
 
 
 

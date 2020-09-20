@@ -17,6 +17,7 @@ import penultima
 from among_us import game
 import drawful
 import codenames
+from scrabble import scrabble
 import dib
 from bottoken import token
 bot=economy.bot

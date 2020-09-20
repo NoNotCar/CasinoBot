@@ -8,7 +8,6 @@ class Player(dib.BasePlayer):
     dmchannel=None
     def __init__(self,user,fake=False):
         super().__init__(user,fake)
-        self.hand=[]
         self.durations=[]
     async def send_hand(self):
         await self.dm("Your hand: "+", ".join(c.name for c in self.hand))

@@ -11,6 +11,25 @@ fake_names=["Amelia","Bob","Callum","Derek","Emily","Fergus","Gordon","Harry","I
            "Moonpig","Norbert","Olivia","Possum","Quentin","Rusty","Scrappy","The Boulder","Umbrella","Venus","Wendy",
            "Yakult","Zanzibar"]
 TEST_PLAY_URSELF = False
+econv=lambda l:":blue_square:" if l=="*" else ":regional_indicator_%s:" % l.lower()
+class bidict(dict):
+    def __init__(self, *args, **kwargs):
+        super(bidict, self).__init__(*args, **kwargs)
+        self.inverse = {}
+        for key, value in self.items():
+            self.inverse.setdefault(value,[]).append(key)
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.inverse[self[key]].remove(key)
+        super(bidict, self).__setitem__(key, value)
+        self.inverse.setdefault(value,[]).append(key)
+
+    def __delitem__(self, key):
+        self.inverse.setdefault(self[key],[]).remove(key)
+        if self[key] in self.inverse and not self.inverse[self[key]]:
+            del self.inverse[self[key]]
+        super(bidict, self).__delitem__(key)
 
 def smart_number(things: list, name: str, plural=None) -> str:
     return "%s %s" % (len(things), name if len(things) == 1 else plural or name + "s")
@@ -67,6 +86,7 @@ class BasePlayer(object):
     def __init__(self,user,fake=False):
         self.user=FakeUser() if fake else user
         self.fake=fake
+        self.hand=[]
     async def dm(self,msg):
         await self.user.dm(msg)
     @property
@@ -117,18 +137,19 @@ class BaseGame(object):
         m = await self.bot.wait_for("message",check=lambda m:m.channel==self.channel and m.author == chooser.du and len(m.mentions) == 1 and m.mentions[0] in [c.du for c in choices])
         return next(c for c in choices if c.du==m.mentions[0])
     async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False):
-        if player.fake:
+        players=player if isinstance(player,list) else [player]
+        if all(p.fake for p in players):
             return random.sample(options,1)[0]
-        send = player.dm if private else self.send
+        send = players[0].dm if private else self.send
         option_dict={o.lower():o for o in options}
         if msg:
             if secret:
                 await send(msg)
             else:
                 await send(msg+", ".join(list(options)))
-        tchannel=player.dmchannel if private else self.channel
+        tchannel=players[0].dmchannel if private else self.channel
         while True:
-            chosen = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author == player.du and m.content)
+            chosen = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in [p.du for p in players] and m.content)
             if chosen.content.lower() in option_dict:
                 return option_dict[chosen.content.lower()]
             if "$" not in chosen.content:

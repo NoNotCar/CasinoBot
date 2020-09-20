@@ -110,6 +110,7 @@ class MUD(dib.BaseGame):
             p.area=start_area
             p.person=Person(p)
             p.role=roles[n]()
+        for p in self.players:
             await p.role.on_become(self,p)
             start_area.entities.append(p.person)
         ams = [ActionManager(p, self) for p in self.players]
@@ -153,7 +154,7 @@ class Area(object):
             desc += " %s %s here." % (dib.smart_list([i.desc for i in ni]),("is" if len(ni)<2 else "are"))
             for p in ni:
                 if p.player.special_desc:
-                    desc+=" %s." % p.special_desc
+                    desc+=" %s." % p.player.special_desc
         else:
             desc += " There's nobody else here."
         return desc

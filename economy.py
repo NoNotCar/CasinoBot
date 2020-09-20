@@ -170,6 +170,13 @@ class Economy(commands.Cog):
         get_user(target).elos=None
         await ctx.send("%s's elo scores have been ERASED" % target.display_name)
     @commands.is_owner()
+    @commands.command(name="reset_elo", help="Reset a game's elo")
+    async def void_elo(self, ctx, target: str):
+        for u in users.values():
+            if u.elos:
+                u.set_elo(target,trueskill.Rating())
+        await ctx.send("%s's elo scores have been RESET" % target)
+    @commands.is_owner()
     @commands.command(name="nickreset",help="reset everyone's nickname")
     async def nickreset(self,ctx):
         for u in users.values():

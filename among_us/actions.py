@@ -37,7 +37,7 @@ class Taze(TargetedAction):
 
 class Broadcast(mud.Say):
     code = "broadcast"
-    async def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
+    def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
         if player.immobile:
             return "You can't hit the broadcast button atm..."
         if player.be(mud.Condition.BLINDED):
@@ -62,7 +62,7 @@ class Activate(Action):
 
 class Consume(TargetedAction):
     code="consume"
-    speed=10
+    speed=30
     def valid(self,game:MUD, player:MPlayer,args:typing.List[str]):
         if player.immobile:
             return "Can't eat people while immobile!"
@@ -124,7 +124,7 @@ class Cameras(Action):
         if player.be(mud.Condition.BLINDED):
             return "You can't see anything, especially camera feeds!"
         return super().valid(game,player,args)
-    async def post_execute(self,game:MUD, player:MPlayer):
+    async def execute(self,game:MUD, player:MPlayer):
         await player.dm("You look through the various camera feeds...")
         await self.notify(player,"is looking at the cameras")
         await asyncio.sleep(10)

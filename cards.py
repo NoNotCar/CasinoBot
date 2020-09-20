@@ -35,10 +35,7 @@ deck_52 =sorted([Card(r, s) for r in ranks for s in suits])
 class Player(dib.BasePlayer):
     sorted=True
     score=0
-    def __init__(self,user,fake=False):
-        super().__init__(user,fake)
-        self.hand=[]
-        self.handmsg=None
+    handmsg=None
     async def set_hand(self,hand):
         self.hand=sorted(hand,key=lambda c:(c.suit,ranks.index(c.rank))) if self.sorted else list(hand)
         await task(self.update())
