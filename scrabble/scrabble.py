@@ -11,6 +11,9 @@ import random
 
 ldist={0:"*"*2,1:"e"*12+"ai"*9+"o"*8+"nrt"*6+"slu"*4,
        2:"d"*4+"g"*3,3:"bcmp"*2,4:"fhvwy"*2,5:"k",8:"jx",10:"qz"}
+super_ldist={0:"*"*4,1:"e"*24+"a"*16+"ot"*15+"inr"*13+"s"*10+"lu"*7,
+             2:"d"*8+"g"*5,3:"cm"*6+"bp"*4,4:"h"*5+"fwy"*4+"v"*3,
+             5:"k"*2,8:"jx"*2,10:"qz"*2}
 def coords_to_v(coords:str):
     return V2(word_list.alphabet.index(coords[0]),int(coords[1:])-1)
 class Letter(object):
@@ -118,11 +121,12 @@ class ScrabblePlayer(dib.BasePlayer):
 
 class Scrabble(dib.BaseGame):
     name="scrabble"
-    min_players = 2
+    min_players = 1
     max_players = 4
     playerclass = ScrabblePlayer
     async def run(self,*modifiers):
-        board=Board(V2(15,15))
+        spr="super" in modifiers
+        board=Board(V2(21,21) if spr else V2(15,15))
         board.add_special(V2(7,7),WordMult,3)
         board.add_special(V2(7,0),WordMult,3)
         for n in range(3,7):
@@ -132,7 +136,18 @@ class Scrabble(dib.BaseGame):
             board.add_special(off,LetterMult,3)
         for off in [V2(7,4),V2(4,0),V2(5,1),V2(1,1)]:
             board.add_special(off,LetterMult,2)
-        bag=list("".join(ldist.values()))
+        if spr:
+            board.add_special(V2(10,10),WordMult,4)
+            board.add_special(V2(10,3),WordMult,3)
+            board.add_special(V2(9,2),WordMult,2)
+            board.add_special(V2(8, 1), WordMult, 2)
+            board.add_special(V2(9, 9), WordMult, 2)
+            board.add_special(V2(8, 8), WordMult, 2)
+            board.add_special(V2(10,0),LetterMult,2)
+            board.add_special(V2(10,7),LetterMult,2)
+            board.add_special(V2(9,6),LetterMult,3)
+            board.add_special(V2(8,5),LetterMult,4)
+        bag=list("".join((super_ldist if spr else ldist).values()))
         random.shuffle(self.players)
         random.shuffle(bag)
         turn=0
@@ -145,7 +160,7 @@ class Scrabble(dib.BaseGame):
                     await self.send("The bag is empty!")
                     bag_empty_msg=True
                 await p.send_hand()
-            img=board.render().xn(4).img
+            img=board.render().xn(3).img
             img.save("scrabble.png")
             playing=self.players[turn]
             await self.channel.send("It's %s's turn!" % playing.name, file=discord.File("scrabble.png"))
