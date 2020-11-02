@@ -49,13 +49,13 @@ class Introvert(Role):
     name="Introvert"
     objective = "End the game alone in a room"
     def did_win(self,game:MUD,player:MPlayer):
-        return not player.dead and not any(isinstance(e,Person) and e is not player.person for e in player.area.entities)
+        return player.area and not any(isinstance(e,Person) and e is not player.person for e in player.area.entities)
 
 class Extrovert(Role):
     name="Extrovert"
     objective = "End the game with another person in the same room"
     def did_win(self,game:MUD,player:MPlayer):
-        return not player.dead and any(isinstance(e,Person) and e is not player.person for e in player.area.entities)
+        return player.area and any(isinstance(e,Person) and e is not player.person for e in player.area.entities)
 
 class Hypochondriac(Role):
     name="Hypochondriac"

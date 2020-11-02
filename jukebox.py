@@ -4,15 +4,36 @@ import asyncio
 import discord
 import uuid
 import pickle
-import economy
 import pathlib
+import os
+import requests
+from bottoken import api
 
 DEFAULT_VOLUME = 0.15
 MAX_LENGTH=600
 MAX_AGE=100
+cache_loc="E:\music_cache"
 def parse_duration(time:str):
     split=time.split(":")
     return sum(int(s)*(60**(len(split)-n-1)) for n,s in enumerate(split))
+def parse_duration_2(time:str):
+    print(time)
+    time=time[2:]
+    if "H" in time:
+        return 3600
+    if "M" in time:
+        split=time.split("M")
+        split[1]=split[1][:-1]
+        return sum((int(s) if s else 0) * (60 ** (len(split) - n - 1)) for n, s in enumerate(split))
+    elif "S" in time:
+        return int(time[:-1])
+    return 9999
+def pickleload(file,default=None):
+    try:
+        with open(file,"rb") as f:
+            return pickle.load(f)
+    except IOError:
+        return default
 async def run(cmd):
     proc = await asyncio.create_subprocess_shell(
         cmd,
@@ -28,27 +49,46 @@ async def run(cmd):
     if stderr:
         print(f'[stderr]\n{stderr.decode()}')
         return False
+class FileDict(object):
+    def __init__(self,file):
+        self.obj=pickleload(file,{})
+        self.file=file
+    def __getattr__(self, item):
+        if item in ["obj","file"]:
+            return self.__dict__[item]
+        else:
+            return getattr(self.obj,item)
+    def __getitem__(self, item):
+        return self.obj[item]
+    def __setitem__(self, key, value):
+        self.obj[key]=value
+        self.sync()
+    def __contains__(self, item):
+        return item in self.obj
+    def sync(self):
+        sobj=pickleload(self.file,{})
+        for k,v in self.obj.items():
+            sobj[k]=v
+        self.obj=sobj
+        with open(self.file,"wb") as f:
+            pickle.dump(sobj,f)
 class CachedMusic(object):
     age=0
     def __init__(self,yt_link,id):
         self.link=yt_link
         self.id=id
         cache[yt_link]=self
-    def delete(self):
-        self.path.unlink()
-        cache.pop(self.link)
     @property
     def path(self):
-        return pathlib.Path('music_cache/%s.mp3' % self.id)
+        return pathlib.Path(cache_loc+"/%s.mp3" % self.id)
 class QueuedMusic(object):
-    def __init__(self,link,queuer:economy.User,desc:str):
+    def __init__(self,link,desc:str):
         self.cm=cache[link] if link in cache else CachedMusic(link,str(uuid.uuid4()))
-        self.queuer=queuer
         self.name=desc
     async def load(self):
         if self.cm.path.exists():
             return True
-        if await run("youtube-dl -x --audio-format mp3 -o music_cache/" + self.cm.id + ".%(ext)s " + self.cm.link):
+        if await run("youtube-dl -x --audio-format mp3 -o "+cache_loc+"\\" + self.cm.id + ".%(ext)s " + self.cm.link):
             return True
         else:
             return False
@@ -61,27 +101,59 @@ class QueuedMusic(object):
             await asyncio.sleep(1)
 
 
-cache={}
-
+cache=FileDict("music.cache")
+search_cache=FileDict("search.pickle")
 class Jukebox(commands.Cog):
     vc=None
     queue_task=None
     happy=False
+    DODGY=False
     def __init__(self, bot):
         self.bot = bot
         self.queue=[]
-        for p in pathlib.Path("music_cache").glob("*.mp3"):
-            p.unlink()
+    def offical_search(self,query, results=10, max_duration=600):
+        response = requests.get(
+            "https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=%s&q=%s&type=video&key=%s" % (
+            results, query, api), timeout=1.0)
+        if response.ok:
+            json = response.json()
+            if "items" in json:
+                ids=[i["id"]["videoId"] for i in json["items"]]
+                ids=",".join(ids)
+                durationresponse=requests.get(f"https://www.googleapis.com/youtube/v3/videos?id={ids}&part=contentDetails&key={api}")
+                if durationresponse.ok:
+                    djson=durationresponse.json()
+                    if "items" in djson:
+                        for n,i in enumerate(djson["items"]):
+                            duration=parse_duration_2(i["contentDetails"]["duration"])
+                            if duration<=max_duration:
+                                return "https://www.youtube.com/watch?v="+i["id"], "%s (%s)" % (json["items"][n]["snippet"]["title"],"%s:%02d"%(duration//60,duration%60))
+        return None, None
     @commands.command(name="search",help="search for youtube videos")
     async def search(self,ctx,*,query):
         result=YoutubeSearch(query,3).to_dict()
         print(result[0])
         await ctx.send("RESULTS: "+", ".join("https://www.youtube.com"+r["url_suffix"] for r in result))
-    def search_for_one(self,query):
-        result = YoutubeSearch(query).to_dict()
-        for r in result:
-            if parse_duration(r["duration"])<=MAX_LENGTH:
-                return "https://www.youtube.com"+r["url_suffix"], "%s (%s)" % (r["title"],r["duration"])
+    async def search_for_one(self,query,ctx):
+        query=query.lower()
+        if query in search_cache:
+            return search_cache[query]
+        await ctx.send("Search not in cache, trying official search...")
+        url,info=self.offical_search(query)
+        if url:
+            search_cache[query]=url,info
+            return url,info
+        else:
+            if self.DODGY:
+                await ctx.send("Official search failed, trying dodgy search...")
+                result = YoutubeSearch(query,3).to_dict()
+                for r in result:
+                    if r["duration"] and parse_duration(r["duration"])<=MAX_LENGTH:
+                        search_cache[query]="https://www.youtube.com"+r["url_suffix"], "%s (%s)" % (r["title"],r["duration"])
+                        return search_cache[query]
+                search_cache[query]=None,None
+            else:
+                await ctx.send("Official search failed, giving up...")
         return None, None
     async def queue_music(self,ctx:commands.Context, qm:QueuedMusic, vc:discord.VoiceChannel):
         if not self.queue_task:
@@ -89,30 +161,23 @@ class Jukebox(commands.Cog):
         if await qm.load():
             self.queue.append(qm)
         else:
-            await ctx.send("Loading failed, your credits have been refunded")
-            qm.queuer.update_balance(1)
+            await ctx.send("Loading failed...")
             return
         if not self.vc:
             self.vc = await vc.connect()
-    @commands.command(name="play",help="play the first result, costs 1c")
+    @commands.command(name="play",help="play the first result")
     async def play(self,ctx,*,query):
-        euser = economy.get_user(ctx.author)
-        if not (self.happy or euser.credits):
-            await ctx.send("Sorry, you're broke!")
-            return
-        result, desc = self.search_for_one(query)
+        result, desc = await self.search_for_one(query,ctx)
         if not result:
             await ctx.send("Sorry, couldn't find any results for %s" % query)
             return
         user = ctx.message.author
         if user.voice:
-            if not self.happy:
-                euser.update_balance(-1)
             vc=user.voice.channel
             await ctx.send("**%s** added to queue!" % desc)
             if not self.queue and result not in cache:
                 await ctx.send("Loading music...")
-            await self.queue_music(ctx,QueuedMusic(result,euser,desc),vc)
+            await self.queue_music(ctx,QueuedMusic(result,desc),vc)
         else:
             await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
     @commands.command(name="queue",help="View the current music queue")
@@ -137,6 +202,9 @@ class Jukebox(commands.Cog):
             if self.vc:
                 self.vc.stop()
                 await self.vc.disconnect()
+        except Exception as e:
+            print("Ignoring exception %s, and resetting..." % e)
+            self.queue_task=asyncio.create_task(self.manage_queue())
     @commands.is_owner()
     @commands.command(name="jukenot",help="stop all music and clear the queue")
     async def stop(self,ctx):
@@ -145,30 +213,16 @@ class Jukebox(commands.Cog):
             self.queue=[]
         else:
             await ctx.send("No music to stop!")
-    @commands.command(name="skip",help="skip the current song, costs 5c if you didn't queue it")
+    @commands.command(name="skip",help="skip the current song")
     async def skip(self,ctx,idx:int=1):
-        payer=economy.get_user(ctx.author)
         if idx<1 or len(self.queue)<idx:
             await ctx.send("Index out of range" if idx else "No music to skip!")
             return
         song=self.queue[idx-1]
-        own=song.queuer==payer
-        cost=0 if own or self.happy else 5
-        if payer.update_balance(-cost):
-            if not own and not self.happy:
-                await ctx.send("%s has been refunded 1c" % song.queuer.name)
-                song.queuer.update_balance(1)
-            if idx==1:
-                self.vc.stop()
-            else:
-                self.queue.remove(song)
+        if idx==1:
+            self.vc.stop()
         else:
-            await ctx.send("You don't have enough money to skip this!")
-    @commands.is_owner()
-    @commands.command(name="happyhour",help="disable jukebox costs for this runtime")
-    async def happy_hour(self,ctx):
-        self.happy=True
-        await ctx.send("IT'S HAPPY HOUR! ALL JUKEBOX FUNCTIONS ARE FREE!")
+            self.queue.remove(song)
     async def graceful_stop(self):
         if self.queue_task:
             self.queue_task.cancel()

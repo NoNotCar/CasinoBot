@@ -5,6 +5,7 @@ from exploding_penguins import game as penguins
 import cards
 import dib
 import telestrations
+import turbostrations
 import asyncio
 
 class FakeContext(object):
@@ -28,7 +29,7 @@ class TestShitler(unittest.IsolatedAsyncioTestCase):
     async def test_chaos(self):
         await test_game(shitler.Game,10,"farmyard","suicide","anarchy","intrigue")
 class TestAllGames(unittest.IsolatedAsyncioTestCase):
-    games=[shitler.Game,one_word.OneWord,cards.Hearts,telestrations.Telestrations,penguins.Game]
+    games=[shitler.Game,one_word.OneWord,cards.Hearts,telestrations.Telestrations,penguins.Game,turbostrations.Turbostrations]
     async def test_min_players(self):
         for g in self.games:
             with self.subTest(game=g):

@@ -43,6 +43,7 @@ class BombGame(dib.BaseGame):
         await self.channel.send("THE GAME IS OVER. %s WON AND RECEIVES 10c!" % self.players[0].name)
         self.players[0].user.update_balance(10)
         p_order.append([self.players[0]])
+        p_order.reverse()
         await self.end_ranked(p_order)
     async def run_round(self):
         frag=random.choice(list(fragments))

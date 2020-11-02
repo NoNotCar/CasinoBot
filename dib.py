@@ -170,7 +170,7 @@ class BaseGame(object):
         while True:
             message = await self.bot.wait_for("message",check=lambda m: m.channel == self.channel and m.author in vdict and m.content)
             return vdict[message.author]
-    async def wait_for_text(self,player,msg="Type something: ",private=True,validation=lambda t: len(t)):
+    async def wait_for_text(self,player,msg="Type something: ",private=True,validation=lambda t: len(t),confirmation=""):
         if player.fake:
             return "poop"
         send = player.dm if private else self.send
@@ -180,6 +180,8 @@ class BaseGame(object):
         while True:
             message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author == player.du and m.content)
             if validation(message.content):
+                if confirmation:
+                    await self.send(confirmation % player.name)
                 return message.content
             if "$" not in message.content:
                 await tchannel.send("Not a valid option...")

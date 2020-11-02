@@ -58,7 +58,7 @@ class Telestrations(BaseGame):
             if p.queue:
                 next_prompt=p.queue.pop(0)
                 if p.queue:
-                    await p.dm("Hurry up! There are currently %s prompts in your queue..." % smart_number(p.queue,"prompt"))
+                    await p.dm("Hurry up! There are currently %s in your queue..." % smart_number(p.queue,"prompt"))
                 if next_prompt.age==self.target_length:
                     return prompt
                 if next_prompt.writing:

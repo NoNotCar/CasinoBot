@@ -14,6 +14,7 @@ ldist={0:"*"*2,1:"e"*12+"ai"*9+"o"*8+"nrt"*6+"slu"*4,
 super_ldist={0:"*"*4,1:"e"*24+"a"*16+"ot"*15+"inr"*13+"s"*10+"lu"*7,
              2:"d"*8+"g"*5,3:"cm"*6+"bp"*4,4:"h"*5+"fwy"*4+"v"*3,
              5:"k"*2,8:"jx"*2,10:"qz"*2}
+standardback = pimg.load("scrabble/board/standard.png")
 def coords_to_v(coords:str):
     return V2(word_list.alphabet.index(coords[0]),int(coords[1:])-1)
 class Letter(object):
@@ -108,6 +109,10 @@ class Board(object):
             i.blit(s.img,pos*16)
         for pos,l in self.letters.items():
             i.blit(l.img,pos*16)
+        if self.size.x==15 and self.size.y==15:
+            b = standardback.copy()
+            b.blit(i,V2(8,8))
+            return b
         return i
 
 class ScrabblePlayer(dib.BasePlayer):
@@ -122,7 +127,7 @@ class ScrabblePlayer(dib.BasePlayer):
 class Scrabble(dib.BaseGame):
     name="scrabble"
     min_players = 1
-    max_players = 4
+    max_players = 5
     playerclass = ScrabblePlayer
     async def run(self,*modifiers):
         spr="super" in modifiers
@@ -218,6 +223,7 @@ class Scrabble(dib.BaseGame):
             turn+=1
             turn%=len(self.players)
             await self.show_scoreboard()
+        #TODO - subtract points for letters left
         await self.end_points()
 
 

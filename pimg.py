@@ -12,6 +12,8 @@ class PImg(object):
         return PImg(self.img.resize((self.w*n,self.h*n),Image.NEAREST))
     def blit(self,other:PImg,pos:vector.V2):
         self.img.paste(other.img, (pos.x, pos.y, pos.x + other.w, pos.y + other.h), other.img)
+    def copy(self):
+        return PImg(self.img.copy())
     @classmethod
     def filled(cls,sz:vector.V2,color:tuple)->PImg:
         return PImg(Image.new("RGBA",sz.tuple,color))
