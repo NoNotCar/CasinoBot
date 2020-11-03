@@ -149,13 +149,13 @@ class Economy(commands.Cog):
             scores=[[u,u.get_elo(game)] for u in users.values() if u.elos]
             scores.sort(key=lambda t: t[1],reverse=True)
             if scores:
-                await ctx.send("\n".join(["LEADERBOARD FOR %s" % game.upper()]+["%s: %s" % (u.name,self.format_elo(e)) for u,e in scores]))
+                await ctx.send("\n".join(["LEADERBOARD FOR %s" % game.upper()]+["%s: %s" % (u.name,self.format_elo(e)) for u,e in scores if e.mu!=25]))
             else:
                 await ctx.send("No scores for this game yet :cry:")
         else:
             user=get_user(ctx.author)
             if user.elos:
-                await ctx.send("\n".join(["YOUR SCORES"] + ["%s: %s" % (g, self.format_elo(e)) for g, e in user.elos.items()]))
+                await ctx.send("\n".join(["YOUR SCORES"] + ["%s: %s" % (g, self.format_elo(e)) for g, e in user.elos.items() if e.mu!=25]))
             else:
                 await ctx.send("You haven't played any elo games yet :cry:")
     @commands.is_owner()

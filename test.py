@@ -6,11 +6,12 @@ import cards
 import dib
 import telestrations
 import turbostrations
+import decrypto
 import asyncio
 
 class FakeContext(object):
     bot=None
-    async def send(self,message):
+    async def send(self,message,**kwargs):
         print(message)
     @property
     def channel(self):
@@ -29,7 +30,14 @@ class TestShitler(unittest.IsolatedAsyncioTestCase):
     async def test_chaos(self):
         await test_game(shitler.Game,10,"farmyard","suicide","anarchy","intrigue")
 class TestAllGames(unittest.IsolatedAsyncioTestCase):
-    games=[shitler.Game,one_word.OneWord,cards.Hearts,telestrations.Telestrations,penguins.Game,turbostrations.Turbostrations]
+    games=[
+        # shitler.Game,
+        # one_word.OneWord,
+        # cards.Hearts,
+        # telestrations.Telestrations,
+        # penguins.Game,
+        # turbostrations.Turbostrations,
+        decrypto.Decrypto]
     async def test_min_players(self):
         for g in self.games:
             with self.subTest(game=g):

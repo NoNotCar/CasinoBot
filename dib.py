@@ -48,6 +48,9 @@ def thea(name:str,singular:bool) -> str:
         return "an %s" % name
     return "a %s" % name
 
+def to_emoji(thing)->str:
+    if isinstance(thing,int):
+        return [":zero:",":one:",":two:",":three:",":four:",":five:",":six:",":seven:",":eight:",":nine:"][thing]
 async def gather(coros:typing.List[typing.Coroutine])->typing.List:
     return await asyncio.gather(*coros)
 
@@ -170,18 +173,19 @@ class BaseGame(object):
         while True:
             message = await self.bot.wait_for("message",check=lambda m: m.channel == self.channel and m.author in vdict and m.content)
             return vdict[message.author]
-    async def wait_for_text(self,player,msg="Type something: ",private=True,validation=lambda t: len(t),confirmation=""):
-        if player.fake:
-            return "poop"
-        send = player.dm if private else self.send
+    async def wait_for_text(self,player,msg="Type something: ",private=True,validation=lambda t: len(t),confirmation="",faked="poop"):
+        players = player if isinstance(player, list) else [player]
+        if all(p.fake for p in players):
+            return faked
+        send = players[0].dm if private else self.send
         if msg:
             await send(msg)
-        tchannel = player.dmchannel if private else self.channel
+        tchannel = players[0].dmchannel if private else self.channel
         while True:
-            message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author == player.du and m.content)
+            message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in [p.du for p in players] and m.content)
             if validation(message.content):
                 if confirmation:
-                    await self.send(confirmation % player.name)
+                    await self.send(confirmation % players[0].name)
                 return message.content
             if "$" not in message.content:
                 await tchannel.send("Not a valid option...")
@@ -224,8 +228,8 @@ class BaseGame(object):
         await self.end_ranked([points[p] for p in sorted(points.keys(),reverse=True)])
     async def show_scoreboard(self,final=False):
         await self.send(("FINAL SCOREBOARD:\n" if final else "CURRENT SCOREBOARD:\n")+"\n".join("%s: %s" % (p.name,p.points) for p in self.players))
-    async def send(self,msg:str):
-        await self.channel.send(msg)
+    async def send(self,msg:str="",**kwargs):
+        await self.channel.send(msg,**kwargs)
 def inheritors(klass):
     subclasses = set()
     work = [klass]
@@ -311,13 +315,16 @@ class Games(commands.Cog):
                 await self.stop(ctx)
     @commands.command(name="fake",help="Add a fake player to the current game")
     @commands.is_owner()
-    async def add_fake_player(self,ctx):
+    async def add_fake_player(self,ctx,number=1):
         self.refresh()
-        if game:=self.games.get(ctx.channel,None):
-            await ctx.send("Fake player added!")
-            return await game.join(game.playerclass(None, True))
-        else:
-            await ctx.send("No games currently in this channel...")
+        for _ in range(number):
+            if game:=self.games.get(ctx.channel,None):
+                await ctx.send("Fake player added!")
+                if number==1:
+                    return await game.join(game.playerclass(None, True))
+                await game.join(game.playerclass(None, True))
+            else:
+                await ctx.send("No games currently in this channel...")
     @commands.command(name="games",help="show all current games")
     async def games(self,ctx):
         await ctx.send("Current games: "+", ".join(self.game_classes.keys()))

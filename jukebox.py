@@ -8,7 +8,7 @@ import pathlib
 import os
 import requests
 from bottoken import api
-
+from difflib import SequenceMatcher
 DEFAULT_VOLUME = 0.15
 MAX_LENGTH=600
 MAX_AGE=100
@@ -16,6 +16,8 @@ cache_loc="E:\music_cache"
 def parse_duration(time:str):
     split=time.split(":")
     return sum(int(s)*(60**(len(split)-n-1)) for n,s in enumerate(split))
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 def parse_duration_2(time:str):
     print(time)
     time=time[2:]
@@ -43,6 +45,8 @@ async def run(cmd):
     stdout, stderr = await proc.communicate()
 
     print(f'[{cmd!r} exited with {proc.returncode}]')
+    if proc.returncode==1:
+        return False
     if stdout:
         print(f'[stdout]\n{stdout.decode()}')
         return True
@@ -161,10 +165,14 @@ class Jukebox(commands.Cog):
         if await qm.load():
             self.queue.append(qm)
         else:
-            await ctx.send("Loading failed...")
+            await ctx.send("Loading failed, sorry!")
             return
         if not self.vc:
             self.vc = await vc.connect()
+    @commands.command(name="cache",help="view what's in cache, with optional search feature")
+    async def cache(self,ctx,*,query=""):
+        results=sorted(search_cache.keys(),key=lambda s:similar(query,s) if query else s,reverse=bool(query))[:10 if query else 100]
+        await ctx.send(", ".join(results))
     @commands.command(name="play",help="play the first result")
     async def play(self,ctx,*,query):
         result, desc = await self.search_for_one(query,ctx)
@@ -178,6 +186,19 @@ class Jukebox(commands.Cog):
             if not self.queue and result not in cache:
                 await ctx.send("Loading music...")
             await self.queue_music(ctx,QueuedMusic(result,desc),vc)
+        else:
+            await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
+    @commands.command(name="sudoplay",help="play a direct youtube link, bypassing search.")
+    @commands.is_owner()
+    async def sudoplay(self,ctx,url):
+        user = ctx.message.author
+        qm=QueuedMusic(url, "Unknown (N/A)")
+        if user.voice:
+            vc = user.voice.channel
+            await ctx.send("**%s** added to queue!" % qm.name)
+            if not self.queue and url not in cache:
+                await ctx.send("Loading music...")
+            await self.queue_music(ctx,qm, vc)
         else:
             await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
     @commands.command(name="queue",help="View the current music queue")

@@ -18,6 +18,7 @@ import drawful
 import codenames
 from scrabble import scrabble
 import witswagers
+import decrypto
 import dib
 from bottoken import token
 bot=economy.bot
