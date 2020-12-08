@@ -3,8 +3,10 @@ import discord
 from itertools import permutations
 import random
 from word_list import common
+import asyncio
 
 possible_codes = [list(p) for p in permutations([1, 2, 3, 4], 3)]
+LEEWAY = 60
 def stripsplit(string:str,sep:str):
     return [s.strip() for s in string.split(sep)]
 def get_valid_clue(clue:str):
@@ -57,15 +59,33 @@ class Decrypto(dib.BaseGame):
             codemasters=[left_team[codemaster[0]],right_team[codemaster[1]]]
             await self.send("ROUND %s/8: Codemasters: %s and %s" % (r+1,codemasters[0].name,codemasters[1].name))
             codes = [random.choice(possible_codes) for _ in range(2)]
-            clues = await dib.gather([self.wait_for_text(p,"Sequence to send: "+"".join(dib.to_emoji(c) for c in codes[n])+"\nSubmit your clue, comma separated.",validation=get_valid_clue,confirmation="%s has submitted their clues!",faked="dog,cat,horse") for n,p in enumerate(codemasters)])
+            clues = [None, None]
+            tasks=[self.wait_for_text(p,"Sequence to send: "+"".join(dib.to_emoji(c) for c in codes[n])+"\nSubmit your clue, comma separated.",
+                                      validation=get_valid_clue,
+                                      confirmation="%s has submitted their clues!",
+                                      faked="dog,cat,horse") for n,p in enumerate(codemasters)]
+            tasks=[asyncio.create_task(t) for t in tasks]
+            await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
+            try:
+                not_done = next(t for t in tasks if not t.done())
+                nidx = tasks.index(not_done)
+                await self.send("%s, you have %s seconds to submit your clue!" % (codemasters[nidx].tag,LEEWAY))
+                await asyncio.wait_for(not_done,LEEWAY)
+            except StopIteration:
+                pass
+            except asyncio.TimeoutError:
+                await self.send("Oh no! %s did not submit clues in time..." % codemasters[nidx].name)
+            for n,t in enumerate(tasks):
+                if not t.cancelled():
+                    clues[n]=t.result()
             for e in gs.get_embeds():
                 await self.send(embed=e)
             guesses=None
             if r:
-                await self.send("Interception time!\n%s's clues: %s.\n%s's clues: %s" % (gs.emojis[0],clues[0],gs.emojis[1],clues[1]))
+                await self.send("Interception time!\n%s's clues: %s.\n%s's clues: %s" % (gs.emojis[0],clues[0] or "Not submitted",gs.emojis[1],clues[1] or "Not submitted"))
                 guesses=await dib.gather([self.wait_for_text(teams[n],"",False,get_guess,"%s's team submitted their guess!",random_guess()) for n in range(2)])
                 guesses=[get_guess(g) for g in guesses]
-            await self.send("Guessing time!\n%s's clues: %s.\n%s's clues: %s" % (gs.emojis[0], clues[0], gs.emojis[1], clues[1]))
+            await self.send("Guessing time!\n%s's clues: %s.\n%s's clues: %s" % (gs.emojis[0], clues[0] or "Not submitted", gs.emojis[1], clues[1] or "Not submitted"))
             results = await dib.gather([self.wait_for_text([p for p in teams[n] if p != codemasters[n]], "", False,get_guess, "%s's team submitted their guess!",random_guess()) for n in range(2)])
             results=[get_guess(r) for r in results]
             failure=False
@@ -87,7 +107,8 @@ class Decrypto(dib.BaseGame):
                 codemaster[n]+=1
                 codemaster[n]%=len(teams[n])
                 for idx,w in enumerate(codes[n]):
-                    gs.add_clue(n,w,get_valid_clue(clues[n])[idx])
+                    if clues[n]:
+                        gs.add_clue(n,w,get_valid_clue(clues[n])[idx])
             for e in gs.get_embeds():
                 await self.send(embed=e)
         totals = [intercepts[n] ** 2 - miscoms[n] ** 2 for n in range(2)]

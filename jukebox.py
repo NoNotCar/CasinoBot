@@ -10,7 +10,7 @@ import requests
 from bottoken import api
 from difflib import SequenceMatcher
 DEFAULT_VOLUME = 0.15
-MAX_LENGTH=600
+MAX_LENGTH=12*60
 MAX_AGE=100
 cache_loc="E:\music_cache"
 def parse_duration(time:str):
@@ -143,7 +143,7 @@ class Jukebox(commands.Cog):
         if query in search_cache:
             return search_cache[query]
         await ctx.send("Search not in cache, trying official search...")
-        url,info=self.offical_search(query)
+        url,info=self.offical_search(query,max_duration=MAX_LENGTH)
         if url:
             search_cache[query]=url,info
             return url,info
@@ -171,7 +171,7 @@ class Jukebox(commands.Cog):
             self.vc = await vc.connect()
     @commands.command(name="cache",help="view what's in cache, with optional search feature")
     async def cache(self,ctx,*,query=""):
-        results=sorted(search_cache.keys(),key=lambda s:similar(query,s) if query else s,reverse=bool(query))[:10 if query else 100]
+        results=sorted(search_cache.keys(),key=lambda s:similar(query,s) if query else s,reverse=bool(query))[:10 if query else 50]
         await ctx.send(", ".join(results))
     @commands.command(name="play",help="play the first result")
     async def play(self,ctx,*,query):
@@ -240,7 +240,7 @@ class Jukebox(commands.Cog):
             await ctx.send("Index out of range" if idx else "No music to skip!")
             return
         song=self.queue[idx-1]
-        if idx==1:
+        if idx==1 and self.vc:
             self.vc.stop()
         else:
             self.queue.remove(song)

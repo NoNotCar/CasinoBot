@@ -18,11 +18,10 @@ class DrawfulRound(object):
     async def draw_phase(self,game):
         self.pic=await game.wait_for_picture(self.drawer,"Draw this: %s" % self.prompt)
         await self.drawer.dm("Thanks!")
-    async def guess_phase(self,game):
-        await self.prompter.dm("Your prompt is being described, please wait...")
-        await self.drawer.dm("Your picture is being described, please wait...")
-        others=self.get_others(game.players)
-        self.guesses=await dib.smart_gather([game.wait_for_text(p,"Describe this: %s" % self.pic) for p in others],others)
+async def p_guess_phase(p:dib.BasePlayer,game:dib.BaseGame,rounds):
+    for r in rounds:
+        if p!=r.prompter and p!=r.drawer:
+            r.guesses[p]=await game.wait_for_text(p, "Describe this: %s" % r.pic)
 class Drawful(dib.BaseGame):
     name="drawful"
     min_players = 3
@@ -37,7 +36,7 @@ class Drawful(dib.BaseGame):
         random.shuffle(rounds)
         await dib.gather([r.submit_phase(self) for r in rounds])
         await dib.gather([r.draw_phase(self) for r in rounds])
-        await dib.chain([r.guess_phase(self) for r in rounds])
+        await dib.gather([p_guess_phase(p,self,rounds) for p in self.players])
         await self.channel.send("It's voting time!")
         for r in rounds:
             smart_people=[]

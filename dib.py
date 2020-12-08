@@ -1,3 +1,4 @@
+from __future__ import annotations
 import discord
 from discord.ext import commands
 from economy import get_user, register_1v1, register_ranked
@@ -5,6 +6,7 @@ import asyncio
 import random
 import trueskill
 import typing
+import string
 from collections import defaultdict
 dib_games=[]
 fake_names=["Amelia","Bob","Callum","Derek","Emily","Fergus","Gordon","Harry","Isobel","John","Kallum","Larry",
@@ -51,6 +53,18 @@ def thea(name:str,singular:bool) -> str:
 def to_emoji(thing)->str:
     if isinstance(thing,int):
         return [":zero:",":one:",":two:",":three:",":four:",":five:",":six:",":seven:",":eight:",":nine:"][thing]
+
+def assign_letters(players:typing.List[BasePlayer])->dict:
+    assignment={}
+    remaining = set(string.ascii_uppercase)
+    for p in players:
+        assigned=p.name[0].upper()
+        if assigned not in remaining:
+            assigned=random.choice(list(remaining))
+        remaining.discard(assigned)
+        assignment[p]=assigned
+    return assignment
+
 async def gather(coros:typing.List[typing.Coroutine])->typing.List:
     return await asyncio.gather(*coros)
 
@@ -84,6 +98,9 @@ class FakeUser(object):
     @property
     def user(self):
         return self
+    @property
+    def mention(self):
+        return "@"+self.nick
 class BasePlayer(object):
     points=0
     def __init__(self,user,fake=False):
@@ -101,6 +118,9 @@ class BasePlayer(object):
     @property
     def dmchannel(self):
         return self.user.dmchannel
+    @property
+    def tag(self):
+        return self.du.mention
 class BaseGame(object):
     playerclass=BasePlayer
     started=False

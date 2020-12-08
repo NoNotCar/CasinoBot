@@ -5,7 +5,10 @@ from enum import Enum
 import random
 from asyncio import create_task,wait_for,exceptions
 rtypes=["prefix","suffix","middle"]
-fragments={"er","gh","th","sh","de","ed","re","op","py","un","st","ch","po","go","to","so","is","ir","z","v","y","ve","il","oo","ea","ee","in","can","wed","res","x","are","ira","pat","ty","ae","ma","ta","sa"}
+lwords=list(words)
+representive_words=random.sample(lwords,len(lwords)//10)
+bounds={"easy":(100,1000),"medium":(10,100),"hard":(1,10)}
+#fragments={"er","gh","th","sh","de","ed","re","op","py","un","st","ch","po","go","to","so","is","ir","z","v","y","ve","il","oo","ea","ee","in","can","wed","res","x","are","ira","pat","ty","ae","ma","ta","sa"}
 def valid(word,rtype,frag):
     l=len(frag)
     if rtype=="any":
@@ -15,6 +18,18 @@ def valid(word,rtype,frag):
     elif rtype=="suffix":
         return frag==word[-l:]
     return frag in word[1:-1]
+def gen_round(min_diff,max_diff):
+    t=random.choice(rtypes)
+    while True:
+        trial_word=random.choice(lwords)
+        for s in range(2,len(trial_word)+1):
+            frag = (trial_word[:s] if t=="prefix" else trial_word[-s:] if t=="suffix" else trial_word[1:-1])
+            matches=sum(1 for w in representive_words if valid(w,t,frag))
+            if min_diff<=matches<=max_diff:
+                return frag,t
+            if t=="middle":
+                break
+
 class BombPlayer(dib.BasePlayer):
     lives=3
 class BombGame(dib.BaseGame):
@@ -24,7 +39,9 @@ class BombGame(dib.BaseGame):
     min_players = 2
     max_players = 20
     name="bomb"
-    async def run(self):
+    difficulty="easy"
+    async def run(self,difficulty="easy"):
+        self.difficulty=difficulty
         await self.channel.send("PLAYER ORDER: "+" ,".join(p.name for p in self.players))
         p_order=[]
         while len(self.players)>1:
@@ -46,8 +63,7 @@ class BombGame(dib.BaseGame):
         p_order.reverse()
         await self.end_ranked(p_order)
     async def run_round(self):
-        frag=random.choice(list(fragments))
-        rt=random.choice(rtypes)
+        frag,rt=gen_round(*bounds[self.difficulty])
         used=set()
         self.current_turn=random.randint(0,len(self.players)-1)
         await self.channel.send("ROUND START: %s - %s\n%s to play." % (frag.upper(),rt.upper(),self.players[self.current_turn].name))

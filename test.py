@@ -8,6 +8,7 @@ import telestrations
 import turbostrations
 import decrypto
 import asyncio
+import drawful
 
 class FakeContext(object):
     bot=None
@@ -31,6 +32,7 @@ class TestShitler(unittest.IsolatedAsyncioTestCase):
         await test_game(shitler.Game,10,"farmyard","suicide","anarchy","intrigue")
 class TestAllGames(unittest.IsolatedAsyncioTestCase):
     games=[
+        drawful.Drawful,
         # shitler.Game,
         # one_word.OneWord,
         # cards.Hearts,
