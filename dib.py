@@ -53,7 +53,9 @@ def thea(name:str,singular:bool) -> str:
 def to_emoji(thing)->str:
     if isinstance(thing,int):
         return [":zero:",":one:",":two:",":three:",":four:",":five:",":six:",":seven:",":eight:",":nine:"][thing]
-
+def revolve(l:typing.List):
+    if l:
+        l.append(l.pop(0))
 def assign_letters(players:typing.List[BasePlayer])->dict:
     assignment={}
     remaining = set(string.ascii_uppercase)
@@ -155,10 +157,20 @@ class BaseGame(object):
     async def run(self,*modifiers):
         pass
     async def wait_for_tag(self,chooser,choices):
+        return (await self.wait_for_multitag(chooser,choices,1,1))[0]
+    async def wait_for_multitag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],mn:int,mx:int):
         if chooser.fake:
-            return random.sample(choices,1)[0]
-        m = await self.bot.wait_for("message",check=lambda m:m.channel==self.channel and m.author == chooser.du and len(m.mentions) == 1 and m.mentions[0] in [c.du for c in choices])
-        return next(c for c in choices if c.du==m.mentions[0])
+            return random.sample(choices,mn)
+        m = await self.bot.wait_for("message",check=lambda m:m.channel==self.channel and m.author == chooser.du and mn<=len(m.mentions)<=mx and all(u in [c.du for c in choices] for u in m.mentions))
+        return [c for c in choices if c.du in m.mentions]
+    async def dm_tag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],null=False):
+        if null:
+            await chooser.dm("1: Nobody\n"+"\n".join("%s: %s" % (n+2,c.name) for n,c in enumerate(choices)))
+        else:
+            await chooser.dm("\n".join("%s: %s" % (n + 1, c.name) for n, c in enumerate(choices)))
+        n=await self.choose_number(chooser,True,1,len(choices)+null)
+        await chooser.dm("Thanks!")
+        return None if n==1 and null else choices[n-1-null]
     async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False):
         players=player if isinstance(player,list) else [player]
         if all(p.fake for p in players):

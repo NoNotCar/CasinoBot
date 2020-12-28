@@ -72,8 +72,10 @@ class CardGame(dib.BaseGame):
         random.shuffle(deck)
         for i,p in enumerate(self.players):
             await p.set_hand(deck[i*n:i*n+n])
-    async def wait_for_play(self,player,f_valid=lambda c:True,prompt=True):
-        return await self.smart_options(player,False,[c for c in player.hand if f_valid(c)],lambda c:c.text,"%s's turn:" % player.name,True)
+    async def wait_for_play(self,player:Player,f_valid=lambda c:True,prompt=True):
+        card = await self.smart_options(player,False,[c for c in player.hand if f_valid(c)],lambda c:c.text,("%s's turn:" % player.name if prompt else ""),True)
+        await player.remove_card(card)
+        return card
 class Hearts(CardGame):
     hearts_broken=False
     target=50
@@ -94,13 +96,13 @@ class Hearts(CardGame):
             self.hearts_broken=False
             for _ in range(len(self.players[0].hand)):
                 await self.channel.send("%s leads.%s" % (self.players[turn].name,"" if self.hearts_broken else " Hearts are currently unbroken."))
-                stack=[await self.wait_for_play(self.players[turn],lambda c: self.hearts_broken or all(c.suit=="hearts" for c in self.players[turn].hand) or c.suit!="hearts")]
+                stack=[await self.wait_for_play(self.players[turn],lambda c: self.hearts_broken or all(c.suit=="hearts" for c in self.players[turn].hand) or c.suit!="hearts",False)]
                 suit=stack[0].suit
                 for _ in range(len(self.players)-1):
                     turn+=1
                     turn%=len(self.players)
                     await self.channel.send("%s's turn. Played: %s" % (self.players[turn].name,", ".join(c.emoji for c in stack)))
-                    stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit))
+                    stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit,False))
                 turn=(stack.index(max(c for c in stack if c.suit==suit))+(turn-len(self.players)+1))%len(self.players)
                 if any(c.suit=="hearts" for c in stack):
                     self.hearts_broken=True
@@ -123,5 +125,48 @@ class Hearts(CardGame):
         for w in winners:
             w.user.update_balance(10)
         await self.end_game(winners)
-
-
+class OhHell(CardGame):
+    name="ohhell"
+    CORRECT=10
+    min_players = 2
+    async def run(self,*modifiers):
+        random.shuffle(self.players)
+        max_round = min(10,52//len(self.players))
+        for r in range(1,max_round+1):
+            trumps = random.choice(suits)
+            await self.deal(r)
+            await self.send("ROUND %s/%s. Trumps are %s." % (r,max_round,trumps))
+            bets={}
+            dealer = self.players[-1]
+            for p in self.players[:-1]:
+                bets[p]=await self.choose_number(p,False,0,r,"%s, bet how many tricks you will win." % p.name)
+            while True:
+                bets[dealer] = await self.choose_number(dealer, False, 0, r, "%s, bet how many tricks you will win." % dealer.name)
+                if sum(bets.values())!=r:
+                    break
+                await self.send("The sum of bets cannot be equal to the total number of tricks, bet again!")
+            wins={p:0 for p in self.players}
+            turn=0
+            for _ in range(r):
+                await self.channel.send("%s leads." % self.players[turn].name)
+                stack=[await self.wait_for_play(self.players[turn])]
+                suit=stack[0].suit
+                for _ in range(len(self.players)-1):
+                    turn+=1
+                    turn%=len(self.players)
+                    await self.channel.send("%s's turn. Played: %s" % (self.players[turn].name,", ".join(c.emoji for c in stack)))
+                    stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit,False))
+                winning_card = max(c for c in stack if c.suit==trumps) if any(c.suit==trumps for c in stack) else max(c for c in stack if c.suit==suit)
+                turn=(stack.index(winning_card)+(turn-len(self.players)+1))%len(self.players)
+                await self.channel.send("%s won the trick!" % self.players[turn].name)
+                wins[self.players[turn]]+=1
+            for p in self.players:
+                if wins[p]==bets[p]:
+                    await self.send("%s made their bid and wins %s points!" % (p.name,wins[p]+self.CORRECT))
+                    p.points+=wins[p]+self.CORRECT
+                else:
+                    await self.send("%s did not make their bid and gets %s points." % (p.name, wins[p]))
+                    p.points += wins[p]
+            await self.show_scoreboard()
+            dib.revolve(self.players)
+        await self.end_points()

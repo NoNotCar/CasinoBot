@@ -9,6 +9,8 @@ import turbostrations
 import decrypto
 import asyncio
 import drawful
+from avalon import avalon
+from mafia import mafia
 
 class FakeContext(object):
     bot=None
@@ -32,14 +34,17 @@ class TestShitler(unittest.IsolatedAsyncioTestCase):
         await test_game(shitler.Game,10,"farmyard","suicide","anarchy","intrigue")
 class TestAllGames(unittest.IsolatedAsyncioTestCase):
     games=[
-        drawful.Drawful,
+        #drawful.Drawful,
+        #avalon.Game,
+        mafia.Mafia,
         # shitler.Game,
         # one_word.OneWord,
         # cards.Hearts,
         # telestrations.Telestrations,
         # penguins.Game,
         # turbostrations.Turbostrations,
-        decrypto.Decrypto]
+        #decrypto.Decrypto
+        ]
     async def test_min_players(self):
         for g in self.games:
             with self.subTest(game=g):

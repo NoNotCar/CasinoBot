@@ -112,6 +112,8 @@ class Decrypto(dib.BaseGame):
             for e in gs.get_embeds():
                 await self.send(embed=e)
         totals = [intercepts[n] ** 2 - miscoms[n] ** 2 for n in range(2)]
+        for e in gs.get_embeds():
+            await self.send(embed=e)
         if totals[0] > totals[1]:
             await self.send("%s wins!" % gs.emojis[0])
             await self.end_game(left_team)

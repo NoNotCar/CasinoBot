@@ -60,6 +60,7 @@ class Telestrations(BaseGame):
                 if p.queue:
                     await p.dm("Hurry up! There are currently %s in your queue..." % smart_number(p.queue,"prompt"))
                 if next_prompt.age==self.target_length:
+                    #await self.send("%s has finished all their prompts!" % p.name)
                     return prompt
                 if next_prompt.writing:
                     next_prompt.pages.append(await self.wait_for_text(p,"Describe this:\n"+next_prompt.current))

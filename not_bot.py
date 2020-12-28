@@ -20,6 +20,9 @@ import codenames
 from scrabble import scrabble
 import witswagers
 import decrypto
+import quiplash
+from avalon import avalon
+from mafia import mafia
 import dib
 from bottoken import token
 bot=economy.bot
@@ -49,6 +52,10 @@ async def on_command_error(ctx:commands.Context,error:commands.CommandError):
 @bot.command(name="roll",help="roll a dice")
 async def roll(ctx,sides:int):
     await ctx.send("You rolled a %s!" % (sides+1))
+@bot.command(name="mute",help="server mute yourself")
+@commands.has_permissions(administrator=True)
+async def mute(ctx):
+    await ctx.author.edit(mute=True)
 @bot.command(name="begone",help="Stop the bot")
 @commands.has_permissions(administrator=True)
 async def begone(ctx):
