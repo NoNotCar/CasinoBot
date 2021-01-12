@@ -15,7 +15,6 @@ DEFAULT_VOLUME = 0.15
 MAX_LENGTH=12*60
 MAX_AGE=100
 cache_loc="E:\music_cache"
-moods = {"galaxy": ("E:/OSTs/SMG-1","E:/OSTs/SMG-2"),"all":("E:/OSTs",)}
 def parse_duration(time:str):
     split=time.split(":")
     return sum(int(s)*(60**(len(split)-n-1)) for n,s in enumerate(split))
@@ -120,7 +119,6 @@ class Jukebox(commands.Cog):
     queue_task=None
     happy=False
     DODGY=False
-    mood_music = None
     current_track = None
     def __init__(self, bot):
         self.bot = bot
@@ -207,26 +205,6 @@ class Jukebox(commands.Cog):
             self.queue.remove(qm)
             self.queue.insert(1,qm)
             self.resort()
-    @commands.command(name="mood", help="set the mood music")
-    async def mood(self, ctx, mood:str):
-        mood=mood.lower()
-        if mood=="none":
-            self.mood_music=None
-            ctx.send("No more mood music!")
-            return
-        if mood not in moods:
-            await ctx.send("Invalid mood! Valid moods: %s" % ", ".join(moods.keys()))
-            return
-        user = ctx.message.author
-        if user.voice:
-            if not self.vc:
-                self.vc = await user.voice.channel.connect()
-            await ctx.send("Mood music set to %s!" % mood)
-            self.mood_music=mood
-            if not self.queue_task:
-                self.queue_task = asyncio.create_task(self.manage_queue())
-        else:
-            await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
     @commands.command(name="sudoplay",help="play a direct youtube link, bypassing search.")
     @commands.is_owner()
     async def sudoplay(self,ctx,url):
@@ -245,12 +223,9 @@ class Jukebox(commands.Cog):
         start = 10*(page-1)
         if start<len(self.queue):
             await ctx.send("\n".join("#%s: %s" % (start+n+1,qm.name) for n,qm in enumerate(self.queue[start:start+10])))
-        elif self.current_track:
-            await ctx.send("Current mood music: \"%s\" from playlist \"%s\"" % (self.current_track.stem,self.mood_music))
         else:
             await ctx.send("There's no music on that queue page - did you mean $play?")
     @commands.command(name="playlist",help="Queue an entire playlist")
-    @commands.is_owner()
     async def queue_playlist(self,ctx,url,shuff=""):
         url=self.aliased(url)
         user = ctx.message.author
@@ -290,17 +265,6 @@ class Jukebox(commands.Cog):
                         asyncio.create_task(self.queue[1].load())
                     await self.queue[0].play(self.vc)
                     self.queue.pop(0)
-                elif self.mood_music:
-                    tracks = []
-                    for folder in moods[self.mood_music]:
-                        tracks.extend(pathlib.Path(folder).glob("**/*.mp3"))
-                    self.current_track=choice(tracks)
-                    audio_source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(self.current_track),
-                                                                DEFAULT_VOLUME)
-                    self.vc.play(audio_source)
-                    while self.vc.is_playing():
-                        await asyncio.sleep(1)
-                    self.current_track=None
                 elif self.vc:
                     await self.vc.disconnect()
                     self.vc=None
