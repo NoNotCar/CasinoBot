@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands
 import math
 import pickle
-import trueskill
 bot = commands.Bot(command_prefix='$')
 class User(object):
     credits=10
@@ -25,8 +24,13 @@ class User(object):
     def get_elo(self,game):
         if self.elos is None:
             self.elos={}
-        return self.elos.get(game,trueskill.Rating())
+        return self.elos.get(game,0)
     def set_elo(self,game,rating):
+        last_rating = self.get_elo(game)
+        if 100 > last_rating > rating:
+            return
+        elif last_rating>100>rating:
+            rating=100
         self.elos[game]=rating
         save()
     async def dm(self,msg):
@@ -60,18 +64,23 @@ def get_user(user: discord.User)-> User:
     except KeyError:
         users[user.id]=(BankUser if user.bot else User)(user.id,user.display_name)
         return users[user.id]
-
+ELO_KEXP = 100
+BASE_ELO_WIN = 50
+def base_elo_1v1(winner,loser,game):
+    return BASE_ELO_WIN*math.exp((loser.get_elo(game)-winner.get_elo(game))/ELO_KEXP)
+def single_player_elo_change(p,game,winners,losers):
+    if not (winners or losers):
+        return 0
+    return (sum(base_elo_1v1(p,l,game) for l in losers)-sum(base_elo_1v1(w,p,game) for w in winners))/(len(winners)+len(losers))
 def register_1v1(game,winners,losers,draw=False):
-    new_ratings = trueskill.rate([[w.get_elo(game) for w in winners],[l.get_elo(game) for l in losers]],[0,0] if draw else [0,1])
-    for n,w in enumerate(winners):
-        w.set_elo(game,new_ratings[0][n])
-    for n,l in enumerate(losers):
-        l.set_elo(game,new_ratings[1][n])
+    if draw:
+        return
+    register_ranked(game,[winners,losers])
 def register_ranked(game,p_order):
-    new_ratings = trueskill.rate([[p.get_elo(game) for p in ps] for ps in p_order],list(range(len(p_order))))
+    deltas = [[single_player_elo_change(p,game,sum(p_order[:n],[]),sum(p_order[n+1:],[])) for p in ps] for n,ps in enumerate(p_order)]
     for n,ps in enumerate(p_order):
         for m,p in enumerate(ps):
-            p.set_elo(game,new_ratings[n][m])
+            p.set_elo(game,max(1,p.get_elo(game)+deltas[n][m]))
 class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -141,21 +150,21 @@ class Economy(commands.Cog):
         else:
             get_user(ctx.author).nick=ctx.author.display_name
         await ctx.send("Name set to %s" % get_user(ctx.author).name)
-    def format_elo(self,r:trueskill.Rating):
-        return int(round(r.mu*4))
+    def format_elo(self,r:float):
+        return int(round(r))
     @commands.command(help="get your current elo scores, or the elo for a specific game")
     async def elo(self,ctx,game=""):
         if game:
             scores=[[u,u.get_elo(game)] for u in users.values() if u.elos]
             scores.sort(key=lambda t: t[1],reverse=True)
             if scores:
-                await ctx.send("\n".join(["LEADERBOARD FOR %s" % game.upper()]+["%s: %s" % (u.name,self.format_elo(e)) for u,e in scores if e.mu!=25]))
+                await ctx.send("\n".join(["LEADERBOARD FOR %s" % game.upper()]+["%s: %s" % (u.name,self.format_elo(e)) for u,e in scores if e]))
             else:
                 await ctx.send("No scores for this game yet :cry:")
         else:
             user=get_user(ctx.author)
             if user.elos:
-                await ctx.send("\n".join(["YOUR SCORES"] + ["%s: %s" % (g, self.format_elo(e)) for g, e in user.elos.items() if e.mu!=25]))
+                await ctx.send("\n".join(["YOUR SCORES"] + ["%s: %s" % (g, self.format_elo(e)) for g, e in user.elos.items() if e]))
             else:
                 await ctx.send("You haven't played any elo games yet :cry:")
     @commands.is_owner()
@@ -174,8 +183,14 @@ class Economy(commands.Cog):
     async def void_elo(self, ctx, target: str):
         for u in users.values():
             if u.elos:
-                u.set_elo(target,trueskill.Rating())
+                u.set_elo(target,0)
         await ctx.send("%s's elo scores have been RESET" % target)
+    @commands.is_owner()
+    @commands.command(name="nuke_elo",help="Reset all elos to None")
+    async def nuke_elo(self, ctx):
+        for u in users.values():
+            u.elos=None
+        await ctx.send("BOOM!")
     @commands.is_owner()
     @commands.command(name="nickreset",help="reset everyone's nickname")
     async def nickreset(self,ctx):

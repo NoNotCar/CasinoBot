@@ -6,7 +6,7 @@ class Role(object):
     help = "???"
     singular = False
     night_phases=[]
-
+    vote_multiplier=1
     def __init__(self, player):
         self.player = player
 
@@ -21,7 +21,7 @@ class Role(object):
 
     async def night_phase(self, game, phase):
         pass
-    async def on_death(self,game):
+    async def on_death(self,game,night=True):
         pass
     async def on_attack(self,game):
         return not self.player.healed
@@ -79,15 +79,15 @@ class Dentist(Mafia):
             await self.player.dm("Choose someone to mute!")
             target = await game.dm_tag(self.player,game.alive,True)
             if target:
-                await target.dm("You've been muted by The Dentist!")
+                await target.dm("You've been muted by The Dentist! Don't speak next day phase!")
                 if not target.fake:
-                    await target.du.edit(mute=True)
+                    #await target.du.edit(mute=True)
                     self.last_muted=target
     async def cleanup(self,game):
         if self.last_muted:
             await self.last_muted.dm("You have healed up and can speak again!")
-            await self.last_muted.du.edit(mute=False)
-    async def on_death(self,game):
+            #await self.last_muted.du.edit(mute=False)
+    async def on_death(self,game,night=True):
         await self.cleanup(game)
 class Doctor(Role):
     true_name = "Doctor"
@@ -151,10 +151,15 @@ class Villager(Role):
 class Tanner(Role):
     true_name = "Tanner"
     emoji = ":poop:"
-    help = "You want to die!"
+    help = "As a leatherworker, you often fantasise about being shot in front of the entire village. Make your dreams reality!"
     singular = True
+    won=False
+    async def on_death(self,game,night=True):
+        if not night:
+            await self.player.dm("Ahhh! The thrill of being publicly shot!")
+            self.won=True
     def did_win(self, game, evil_wins):
-        return self.player.dead
+        return self.won
 class ToughGuy(Role):
     true_name = "Tough Guy"
     emoji = ":mechanical_arm:"
@@ -173,14 +178,42 @@ class Lover(Role):
     help = "A star-crossed lover, you win if either you and your soulmate both live or both die. You can also send heartfelt letters to them during the night."
     lover=None
     night_phases = [1]
+    singular = True
     async def on_game_start(self, game):
         self.lover=random.choice([p for p in game.players if p!=self.player])
         await self.player.dm("Your soulmate is %s!" % self.lover.name)
     async def night_phase(self, game, phase):
-        letter = await game.wait_for_text(self.player,"Pen your sweet love letter to your soulmate!",confirmation="Thanks!")
+        letter = await game.wait_for_text(self.player,"Pen your sweet love letter to your soulmate!")
+        await self.player.dm("Thanks!")
         await self.lover.dm("You have received a sweetly scented letter! It reads:\n"+letter)
     def did_win(self, game, evil_wins):
         return self.player.dead==self.lover.dead
-all_roles = [Mafia,Doctor,Villager,Investigator,Tanner,PrivateInvestigator,ToughGuy,PlagueDoctor,Lover]
+class Mason(Role):
+    true_name = "Mason"
+    emoji = ":house:"
+    help = "As a bricklayer, you obviously know who all the other bricklayers are :P"
+    async def on_game_start(self, game):
+        await self.player.dm("Your fellow masons are: " + " ".join(
+            p.name for p in game.players if isinstance(p.role,Mason) and p is not self.player))
+    @classmethod
+    def random_valid(cls, other_roles):
+        return cls in other_roles
+class Mayor(Role):
+    true_name = "Mayor"
+    emoji = ":older_man:"
+    vote_multiplier = 2
+    help = "Your vote counts double, and through the magic of the internet you don't even have to reveal yourself first!"
+class Child(Role):
+    true_name = "Child"
+    emoji = ":baby:"
+    vote_multiplier = 0
+    help = "As an under-16, your vote counts for nothing!"
+    singular = True
+class Clown(Role):
+    true_name = "Clown"
+    emoji = ":clown:"
+    vote_multiplier = -1
+    help = "As a complete idiot, your vote is negative!"
+all_roles = [Mafia,Doctor,Villager,Investigator,Tanner,PrivateInvestigator,ToughGuy,PlagueDoctor,Lover,Mason,Dentist,Mayor,Child,Clown]
 evils = [r for r in all_roles if r.evil]
 goods = [r for r in all_roles if not r.evil]

@@ -9,10 +9,13 @@ import os
 import requests
 from bottoken import api
 from difflib import SequenceMatcher
+from random import choice, shuffle
+from collections import defaultdict
 DEFAULT_VOLUME = 0.15
 MAX_LENGTH=12*60
 MAX_AGE=100
 cache_loc="E:\music_cache"
+moods = {"galaxy": ("E:/OSTs/SMG-1","E:/OSTs/SMG-2"),"all":("E:/OSTs",)}
 def parse_duration(time:str):
     split=time.split(":")
     return sum(int(s)*(60**(len(split)-n-1)) for n,s in enumerate(split))
@@ -49,7 +52,7 @@ async def run(cmd):
         return False
     if stdout:
         print(f'[stdout]\n{stdout.decode()}')
-        return True
+        return stdout.decode()
     if stderr:
         print(f'[stderr]\n{stderr.decode()}')
         return False
@@ -86,11 +89,12 @@ class CachedMusic(object):
     def path(self):
         return pathlib.Path(cache_loc+"/%s.mp3" % self.id)
 class QueuedMusic(object):
-    def __init__(self,link,desc:str):
+    def __init__(self,link,desc:str,queuer:discord.User):
         self.cm=cache[link] if link in cache else CachedMusic(link,str(uuid.uuid4()))
         self.name=desc
+        self.queuer=queuer
     async def load(self):
-        if self.cm.path.exists():
+        if self.loaded:
             return True
         if await run("youtube-dl -x --audio-format mp3 -o "+cache_loc+"\\" + self.cm.id + ".%(ext)s " + self.cm.link):
             return True
@@ -103,15 +107,21 @@ class QueuedMusic(object):
         vc.play(audio_source)
         while vc.is_playing():
             await asyncio.sleep(1)
+    @property
+    def loaded(self):
+        return self.cm.path.exists()
 
 
 cache=FileDict("music.cache")
 search_cache=FileDict("search.pickle")
+alias_cache=FileDict("alias.pickle")
 class Jukebox(commands.Cog):
     vc=None
     queue_task=None
     happy=False
     DODGY=False
+    mood_music = None
+    current_track = None
     def __init__(self, bot):
         self.bot = bot
         self.queue=[]
@@ -159,16 +169,18 @@ class Jukebox(commands.Cog):
             else:
                 await ctx.send("Official search failed, giving up...")
         return None, None
-    async def queue_music(self,ctx:commands.Context, qm:QueuedMusic, vc:discord.VoiceChannel):
+    async def queue_music(self,ctx:commands.Context, qm:QueuedMusic, vc:discord.VoiceChannel,load=True):
         if not self.queue_task:
             self.queue_task=asyncio.create_task(self.manage_queue())
-        if await qm.load():
+        if not load or await qm.load():
             self.queue.append(qm)
+            self.resort()
         else:
             await ctx.send("Loading failed, sorry!")
             return
         if not self.vc:
             self.vc = await vc.connect()
+        return qm
     @commands.command(name="cache",help="view what's in cache, with optional search feature")
     async def cache(self,ctx,*,query=""):
         results=sorted(search_cache.keys(),key=lambda s:similar(query,s) if query else s,reverse=bool(query))[:10 if query else 50]
@@ -185,14 +197,41 @@ class Jukebox(commands.Cog):
             await ctx.send("**%s** added to queue!" % desc)
             if not self.queue and result not in cache:
                 await ctx.send("Loading music...")
-            await self.queue_music(ctx,QueuedMusic(result,desc),vc)
+            return await self.queue_music(ctx,QueuedMusic(result,desc,user),vc)
+        else:
+            await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
+    @commands.command(name="insert",help="play music ahead of your other queued tracks")
+    async def insert(self,ctx,*,query):
+        qm = await self.play(ctx,query=query)
+        if qm and len(self.queue)>1:
+            self.queue.remove(qm)
+            self.queue.insert(1,qm)
+            self.resort()
+    @commands.command(name="mood", help="set the mood music")
+    async def mood(self, ctx, mood:str):
+        mood=mood.lower()
+        if mood=="none":
+            self.mood_music=None
+            ctx.send("No more mood music!")
+            return
+        if mood not in moods:
+            await ctx.send("Invalid mood! Valid moods: %s" % ", ".join(moods.keys()))
+            return
+        user = ctx.message.author
+        if user.voice:
+            if not self.vc:
+                self.vc = await user.voice.channel.connect()
+            await ctx.send("Mood music set to %s!" % mood)
+            self.mood_music=mood
+            if not self.queue_task:
+                self.queue_task = asyncio.create_task(self.manage_queue())
         else:
             await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
     @commands.command(name="sudoplay",help="play a direct youtube link, bypassing search.")
     @commands.is_owner()
     async def sudoplay(self,ctx,url):
         user = ctx.message.author
-        qm=QueuedMusic(url, "Unknown (N/A)")
+        qm=QueuedMusic(url, "Unknown (N/A)",user)
         if user.voice:
             vc = user.voice.channel
             await ctx.send("**%s** added to queue!" % qm.name)
@@ -202,18 +241,66 @@ class Jukebox(commands.Cog):
         else:
             await ctx.send("How are you meant to listen to music if you're not in a voice channel?")
     @commands.command(name="queue",help="View the current music queue")
-    async def view_queue(self,ctx):
-        if self.queue:
-            await ctx.send("\n".join("#%s: %s" % (n+1,qm.name) for n,qm in enumerate(self.queue[:10])))
+    async def view_queue(self,ctx,page=1):
+        start = 10*(page-1)
+        if start<len(self.queue):
+            await ctx.send("\n".join("#%s: %s" % (start+n+1,qm.name) for n,qm in enumerate(self.queue[start:start+10])))
+        elif self.current_track:
+            await ctx.send("Current mood music: \"%s\" from playlist \"%s\"" % (self.current_track.stem,self.mood_music))
         else:
-            await ctx.send("There's no music queued - did you mean $play?")
+            await ctx.send("There's no music on that queue page - did you mean $play?")
+    @commands.command(name="playlist",help="Queue an entire playlist")
+    @commands.is_owner()
+    async def queue_playlist(self,ctx,url,shuff=""):
+        url=self.aliased(url)
+        user = ctx.message.author
+        if user.voice:
+            vc = user.voice.channel
+        else:
+            await ctx.send("STOP TRYING TO LISTEN TO MUSIC WITHOUT BEING IN THE CHANNEL")
+            return
+        result = await run("youtube-dl --flat-playlist --get-id --get-title --get-duration %s" % url)
+        if result:
+            result = result.split("\n")
+            skipped = 0
+            added = 0
+            qms=[]
+            for i,title in enumerate(result[::3]):
+                if title:
+                    vid = "https://www.youtube.com/watch?v=%s" % result[i*3+1]
+                    d = parse_duration(result[i*3+2])
+                    if d<=MAX_LENGTH:
+                        qms.append(QueuedMusic(vid,"%s (%s)" % (title,result[i*3+2]),user))
+                        added+=1
+                    else:
+                        skipped+=1
+            if shuff=="shuffle":
+                shuffle(qms)
+            for q in qms:
+                await self.queue_music(ctx,q, vc, False)
+            await ctx.send("%s tracks added to queue, %s skipped due to length" % (added,skipped))
+        else:
+            await ctx.send("Sorry, that link didn't work...")
     async def manage_queue(self):
         try:
             while True:
                 if self.queue and self.vc:
                     await self.queue[0].load()
+                    if len(self.queue)>1:
+                        asyncio.create_task(self.queue[1].load())
                     await self.queue[0].play(self.vc)
                     self.queue.pop(0)
+                elif self.mood_music:
+                    tracks = []
+                    for folder in moods[self.mood_music]:
+                        tracks.extend(pathlib.Path(folder).glob("**/*.mp3"))
+                    self.current_track=choice(tracks)
+                    audio_source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(self.current_track),
+                                                                DEFAULT_VOLUME)
+                    self.vc.play(audio_source)
+                    while self.vc.is_playing():
+                        await asyncio.sleep(1)
+                    self.current_track=None
                 elif self.vc:
                     await self.vc.disconnect()
                     self.vc=None
@@ -230,20 +317,60 @@ class Jukebox(commands.Cog):
     @commands.command(name="jukenot",help="stop all music and clear the queue")
     async def stop(self,ctx):
         if self.vc:
-            self.vc.stop()
             self.queue=[]
+            self.mood_music=None
+            self.vc.stop()
         else:
             await ctx.send("No music to stop!")
     @commands.command(name="skip",help="skip the current song")
     async def skip(self,ctx,idx:int=1):
+        if idx==1 and self.vc:
+            self.vc.stop()
+            return
         if idx<1 or len(self.queue)<idx:
             await ctx.send("Index out of range" if idx else "No music to skip!")
             return
         song=self.queue[idx-1]
-        if idx==1 and self.vc:
-            self.vc.stop()
-        else:
-            self.queue.remove(song)
+        self.queue.remove(song)
+        self.resort()
+        await ctx.send("%s removed from queue!" % song.desc)
+    @commands.command(name="clear",help="clear all your music (except for the currently playing one)")
+    async def clear(self,ctx):
+        cleared=0
+        for qm in self.queue[1:]:
+            if qm.queuer == ctx.author:
+                self.queue.remove(qm)
+                cleared+=1
+        await ctx.send("Cleared %s queue entries!" % cleared)
+    @commands.command(name="shuffle",help="shuffle your queued music")
+    async def shuffle(self,ctx):
+        to_shuffle = []
+        for qm in self.queue[1:]:
+            if qm.queuer==ctx.author:
+                to_shuffle.append(qm)
+                self.queue.remove(qm)
+        shuffle(to_shuffle)
+        self.queue.extend(to_shuffle)
+        self.resort()
+        await ctx.send("Shuffled %s queue entries!" % len(to_shuffle))
+    def aliased(self,thing):
+        if thing in alias_cache:
+            return alias_cache[thing]
+        return thing
+    @commands.command(name="alias",help="create an alias for faster queueing")
+    async def alias(self,ctx,alias,url):
+        alias_cache[alias]=url
+        await ctx.send("Alias creation successful!")
+    def resort(self):
+        if self.queue and len(self.queue)>1:
+            counters = {}
+            cdict = {}
+            for qm in self.queue:
+                if qm.queuer not in counters:
+                    counters[qm.queuer]=0.01*len(counters)
+                counters[qm.queuer]+=1
+                cdict[qm]=counters[qm.queuer]
+            self.queue.sort(key=lambda qm:cdict[qm])
     async def graceful_stop(self):
         if self.queue_task:
             self.queue_task.cancel()

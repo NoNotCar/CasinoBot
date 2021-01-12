@@ -44,6 +44,7 @@ class TestAllGames(unittest.IsolatedAsyncioTestCase):
         # penguins.Game,
         # turbostrations.Turbostrations,
         #decrypto.Decrypto
+        cards.GreatDalmuti
         ]
     async def test_min_players(self):
         for g in self.games:

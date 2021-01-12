@@ -23,8 +23,10 @@ import decrypto
 import quiplash
 from avalon import avalon
 from mafia import mafia
+import haiclue
 import dib
 from bottoken import token
+import traceback
 bot=economy.bot
 @bot.event
 async def on_ready():
@@ -47,7 +49,8 @@ async def on_command_error(ctx:commands.Context,error:commands.CommandError):
     elif isinstance(error,commands.CheckFailure):
         await ctx.send("You're probably not an admin or something")
     else:
-        await ctx.send("an error occurred...\n"+repr(error))
+        raise error
+        #await ctx.send("an error occurred...\n"+repr(error))
 
 @bot.command(name="roll",help="roll a dice")
 async def roll(ctx,sides:int):

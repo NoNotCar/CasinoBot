@@ -19,6 +19,7 @@ class Mafia(dib.BaseGame):
     max_players = 20
     roles=None
     name="mafia"
+    shameable = False
     async def run(self,*modifiers):
         for _ in range(10000):
             roles = []
@@ -55,7 +56,7 @@ class Mafia(dib.BaseGame):
         dead = [p for p in self.alive if p.attacked and await p.role.on_attack(self)]
         if dead:
             for p in dead:
-                await p.dm("You died! Join the death chat or something.")
+                await p.dm("You died! Don't reveal anything!")
                 p.dead=True
             await self.send("As the sun rises, you find %s brutally murdered in their sleep." % dib.smart_list([p.name for p in dead]))
         else:
@@ -72,7 +73,7 @@ class Mafia(dib.BaseGame):
             await self.send("%s has called for a vote! (%s total)" % (skipper.name,len(skip_voters)))
         await self.send("VOTING TIME! Choose someone to kill!")
         votes = await dib.gather([self.dm_tag(p,[o for o in self.alive if o is not p],True) for p in self.alive])
-        counts = {v:votes.count(v) for v in votes}
+        counts = {v:sum(self.alive[n].role.vote_multiplier for n,ov in enumerate(votes) if ov==v) for v in votes}
         await self.send("Vote totals:\n"+"\n".join("%s: %s" % (v.name if v else "Nobody",c) for v,c in counts.items()))
         if list(counts.values()).count(max(counts.values()))>1:
             await self.send("The vote is tied! Nobody dies!")
@@ -81,11 +82,11 @@ class Mafia(dib.BaseGame):
             dying = next(v for v,c in counts.items() if c==mx)
             if dying:
                 await self.send("%s has been executed!" % dying.name)
-                await self.kill(dying)
+                await self.kill(dying,False)
             else:
                 await self.send("Nobody dies today!")
-    async def kill(self,p):
-        await p.role.on_death(self)
+    async def kill(self,p,night=True):
+        await p.role.on_death(self,night)
         await p.dm("You died! Join the death chat or something.")
         p.dead = True
     async def check_game_over(self):
@@ -95,7 +96,7 @@ class Mafia(dib.BaseGame):
         elif not any(p.evil for p in self.alive):
             await self.send("It seems like the mafia are gone from the village!")
             await self.game_over(False)
-        elif len([p for p in self.alive if p.evil])/len(self.alive)>=0.5:
+        elif sum(p.role.vote_multiplier for p in self.alive if p.evil)/max(0.001,sum(p.role.vote_multiplier for p in self.alive))>=0.5:
             await self.send("The mafia have reached a majority, and have taken over the village!")
             await self.game_over(True)
     async def game_over(self, evil_wins):

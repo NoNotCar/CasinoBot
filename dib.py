@@ -105,6 +105,7 @@ class FakeUser(object):
         return "@"+self.nick
 class BasePlayer(object):
     points=0
+    busy=False
     def __init__(self,user,fake=False):
         self.user=FakeUser() if fake else user
         self.fake=fake
@@ -132,6 +133,7 @@ class BaseGame(object):
     max_players=10
     done=False
     info={}
+    shameable=True
     def __init__(self,ctx):
         self.players=[]
         self.channel=ctx.channel
@@ -161,7 +163,9 @@ class BaseGame(object):
     async def wait_for_multitag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],mn:int,mx:int):
         if chooser.fake:
             return random.sample(choices,mn)
+        chooser.busy=True
         m = await self.bot.wait_for("message",check=lambda m:m.channel==self.channel and m.author == chooser.du and mn<=len(m.mentions)<=mx and all(u in [c.du for c in choices] for u in m.mentions))
+        chooser.busy=False
         return [c for c in choices if c.du in m.mentions]
     async def dm_tag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],null=False):
         if null:
@@ -183,15 +187,22 @@ class BaseGame(object):
             else:
                 await send(msg+", ".join(list(options)))
         tchannel=players[0].dmchannel if private else self.channel
+        for p in players:
+            p.busy=True
         while True:
             chosen = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in [p.du for p in players] and m.content)
             if chosen.content.lower() in option_dict:
+                for p in players:
+                    p.busy = False
                 return option_dict[chosen.content.lower()]
             if "$" not in chosen.content:
                 await send("Not one of the options...")
     async def smart_options(self,player,private,options,f,msg="Choose an option: ",secret=False):
-        choice=await self.choose_option(player,private,[f(o) for o in options],msg,secret)
-        return next(o for o in options if f(o)==choice)
+        def g(o):
+            r = f(o)
+            return r if isinstance(r,tuple) else (r,)
+        choice=await self.choose_option(player,private,sum((g(o) for o in options),()),msg,secret)
+        return next(o for o in options if choice in g(o))
     async def choose_number(self, player, private, mn, mx, msg=""):
         return await self.smart_options(player,private,list(range(mn,mx+1)),str,msg,True)
     async def wait_for_shout(self,msg="Speak now: ",valids=None):
@@ -212,12 +223,16 @@ class BaseGame(object):
         send = players[0].dm if private else self.send
         if msg:
             await send(msg)
+        for p in players:
+            p.busy=True
         tchannel = players[0].dmchannel if private else self.channel
         while True:
             message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in [p.du for p in players] and m.content)
             if validation(message.content):
                 if confirmation:
                     await self.send(confirmation % players[0].name)
+                for p in players:
+                    p.busy = False
                 return message.content
             if "$" not in message.content:
                 await tchannel.send("Not a valid option...")
@@ -228,12 +243,14 @@ class BaseGame(object):
         if msg:
             await send(msg)
         tchannel = player.dmchannel if private else self.channel
+        player.busy=True
         while True:
             message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author == player.du and m.attachments)
             u = message.attachments[0].url
             if u[-4:] != ".png":
                 await tchannel.send("doesn't look like an image to me...")
             else:
+                player.busy=False
                 return u
     async def end_game(self,winners,losers=None,draw=False):
         if losers is None:
@@ -262,6 +279,9 @@ class BaseGame(object):
         await self.send(("FINAL SCOREBOARD:\n" if final else "CURRENT SCOREBOARD:\n")+"\n".join("%s: %s" % (p.name,p.points) for p in self.players))
     async def send(self,msg:str="",**kwargs):
         await self.channel.send(msg,**kwargs)
+    @property
+    def ashamed(self):
+        return [p for p in self.players if p.busy]
 def inheritors(klass):
     subclasses = set()
     work = [klass]
@@ -377,3 +397,14 @@ class Games(commands.Cog):
             await ctx.send("Current players:\n"+"\n".join(p.name for p in g.players))
         else:
             await ctx.send("no game in this channel...")
+    @commands.command(name="shame",help="shame those who are taking too long")
+    async def shame(self,ctx):
+        if ctx.channel in self.games:
+            g = self.games[ctx.channel]
+            if g.shameable:
+                if shame:=g.ashamed:
+                    await ctx.send("%s, hurry the fuck up!" % smart_list([p.tag for p in shame]))
+                else:
+                    await ctx.send("Shame on you, nobody is busy!")
+            else:
+                await ctx.send("Unfortunately, shaming in this game would reveal too much information...")
