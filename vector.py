@@ -88,6 +88,7 @@ up=V2(0,-1)
 right=V2(1,0)
 down=V2(0,1)
 around=[up,right,down,left]
+ddirs = [V2(1,1),V2(-1,1),V2(-1,-1),V2(1,-1)]
 
 def iter_offsets(tpos:V2):
     for a in around:

@@ -5,6 +5,7 @@ from functools import total_ordering
 import random
 import dib
 from collections import defaultdict
+import typing
 task=asyncio.create_task
 suits=["mice","birds","crabs","wolves"]
 suit_emoji=[":mouse:",":bird:",":crab:",":wolf:"]
@@ -45,7 +46,7 @@ class Card(BaseCard):
         return "%s of %s" % (self.rank,self.suit)
     @property
     def short(self):
-        return (self.rank[0].upper() if isinstance(self.rank,str) else str(self.rank))+self.suit[0].upper()
+        return (self.rank[0].upper() if self.rank!="10" else self.rank)+self.suit[0].upper()
     @property
     def emoji(self):
         return rank_emoji[ranks.index(self.rank)]+suit_emoji[suits.index(self.suit)]
@@ -99,6 +100,14 @@ class Player(dib.BasePlayer):
             task(self.handmsg.edit(content=self.msg))
         else:
             self.handmsg = await self.user.dm(self.msg)
+    def could_play(self,cards:typing.List[BaseCard]):
+        test_hand = self.hand.copy()
+        for c in cards:
+            if c in test_hand:
+                test_hand.remove(c)
+            else:
+                return False
+        return True
     @property
     def msg(self):
         return "YOUR HAND: "+", ".join(c.emoji for c in self.hand)
@@ -128,6 +137,31 @@ class CardGame(dib.BaseGame):
         card = await self.smart_options(player,False,[c for c in player.hand if f_valid(c)],lambda c:(c.text,c.short),("%s's turn:" % player.name if prompt else ""),True)
         player.remove_card(card)
         return card
+    async def wait_for_multiplay(self,player:Player,message="Play some cards",min_cards = 1,max_cards = 1,f_valid=lambda c: True,private=False):
+        send = player.dm if private else self.send
+        while True:
+            text = await self.wait_for_text(player,message,private,faked=", ".join(c.short for c in random.sample(player.hand,min_cards)))
+            if text.lower()=="pass" and min_cards==0:
+                return []
+            hand=[]
+            for cs in text.split(","):
+                cs=cs.strip().lower()
+                for c in player.hand:
+                    if c.text.lower()==cs or c.short.lower()==cs:
+                        if f_valid(c):
+                            hand.append(c)
+                            break
+                else:
+                    await send('Card "%s" is invalid, try again!' % cs)
+                    break
+            else:
+                if min_cards<=len(hand)<=max_cards:
+                    if player.could_play(hand):
+                        return hand
+                    else:
+                        await send("You don't have that many copies!")
+                else:
+                    await send("Incorrect number of cards!")
 class Hearts(CardGame):
     hearts_broken=False
     target=50
@@ -142,19 +176,36 @@ class Hearts(CardGame):
         await super().run()
         random.shuffle(self.players)
         turn=0
+        passing = 0
         while not any(p.score>=self.target for p in self.players):
             self.deal()
             winnings=defaultdict(list)
             self.hearts_broken=False
+            if passing:
+                await self.send("IT'S PASSING TIME!")
+                passed = await dib.gather([self.wait_for_multiplay(p,"Choose 3 cards to give to an opponent!",3,3) for p in self.players])
+                for i,p in enumerate(self.players):
+                    for c in passed[i]:
+                        p.hand.remove(c)
+                        self.players[(i+passing)%len(self.players)].hand.append(c)
+                for p in self.players:
+                    await p.update()
             for _ in range(len(self.players[0].hand)):
-                await self.channel.send("%s leads.%s" % (self.players[turn].tag,"" if self.hearts_broken else " %s are currently unbroken." % suits[2].capitalize()))
-                stack=[await self.wait_for_play(self.players[turn],lambda c: self.hearts_broken or all(c.suit==suits[2] for c in self.players[turn].hand) or c.suit!=suits[2],False)]
-                suit=stack[0].suit
-                for _ in range(len(self.players)-1):
-                    turn+=1
-                    turn%=len(self.players)
-                    await self.channel.send("%s's turn. Played: %s" % (self.players[turn].tag,", ".join(c.emoji for c in stack)))
-                    stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit,False))
+                if len(self.players[0].hand)==1:
+                    stack = [self.players[(turn+i)%len(self.players)].hand[0] for i,_ in enumerate(self.players)]
+                    await self.send("Last round! Autoplayed: %s" % ", ".join(c.emoji for c in stack))
+                    suit = stack[0].suit
+                    turn -= 1
+                    turn %= len(self.players) - 1
+                else:
+                    await self.channel.send("%s leads.%s" % (self.players[turn].tag,"" if self.hearts_broken else " %s are currently unbroken." % suits[2].capitalize()))
+                    stack=[await self.wait_for_play(self.players[turn],lambda c: self.hearts_broken or all(c.suit==suits[2] for c in self.players[turn].hand) or c.suit!=suits[2],False)]
+                    suit=stack[0].suit
+                    for _ in range(len(self.players)-1):
+                        turn+=1
+                        turn%=len(self.players)
+                        await self.channel.send("%s's turn. Played: %s" % (self.players[turn].tag,", ".join(c.emoji for c in stack)))
+                        stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit,False))
                 turn=(stack.index(max(c for c in stack if c.suit==suit))+(turn-len(self.players)+1))%len(self.players)
                 if any(c.suit==suits[2] for c in stack):
                     self.hearts_broken=True
@@ -172,6 +223,7 @@ class Hearts(CardGame):
                 for p,w in winnings.items():
                     p.score+=w
             await self.channel.send("CURRENT SCORES:\n"+"\n".join("%s: %s" % (p.name,p.score) for p in self.players))
+            passing=(passing+2)%3-1
         winners=[p for p in self.players if p.score==min(p.score for p in self.players)]
         await self.channel.send("The game is over. %s won and %s 10c!" % (", ".join(w.name for w in winners),"gets" if len(winners)==1 else "get"))
         for w in winners:
@@ -200,14 +252,21 @@ class OhHell(CardGame):
             wins={p:0 for p in self.players}
             turn=0
             for _ in range(r):
-                await self.channel.send("%s leads." % self.players[turn].name)
-                stack=[await self.wait_for_play(self.players[turn])]
-                suit=stack[0].suit
-                for _ in range(len(self.players)-1):
-                    turn+=1
-                    turn%=len(self.players)
-                    await self.channel.send("%s's turn. Played: %s" % (self.players[turn].tag,", ".join(c.emoji for c in stack)))
-                    stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit,False))
+                if len(self.players[0].hand)==1:
+                    stack = [self.players[(turn+i)%len(self.players)].hand[0] for i,_ in enumerate(self.players)]
+                    await self.send("Last round! Autoplayed: %s" % ", ".join(c.emoji for c in stack))
+                    suit = stack[0].suit
+                    turn-=1
+                    turn%=len(self.players)-1
+                else:
+                    await self.channel.send("%s leads." % self.players[turn].name)
+                    stack=[await self.wait_for_play(self.players[turn])]
+                    suit=stack[0].suit
+                    for _ in range(len(self.players)-1):
+                        turn+=1
+                        turn%=len(self.players)
+                        await self.channel.send("%s's turn. Played: %s" % (self.players[turn].tag,", ".join(c.emoji for c in stack)))
+                        stack.append(await self.wait_for_play(self.players[turn],lambda c: not any(h.suit==suit for h in self.players[turn].hand) or c.suit==suit,False))
                 winning_card = max(c for c in stack if c.suit==trumps) if any(c.suit==trumps for c in stack) else max(c for c in stack if c.suit==suit)
                 turn=(stack.index(winning_card)+(turn-len(self.players)+1))%len(self.players)
                 await self.channel.send("%s won the trick!" % self.players[turn].name)
@@ -226,7 +285,7 @@ class GreatDalmuti(CardGame):
     deck=deck_dalmuti
     info = {"dalmuti":"CARDS:\n"+"\n".join("%s: %s %s" % (c.short,c.text,c.emoji) for c in [DalmutiCard(r) for r in range(1,14)])}
     name="dalmuti"
-    max_players = 8
+    max_players = 9
     min_players = 5
     lengths={"short":4,"standard":6,"long":8,"extreme":12}
     def valid_play(self,player:Player,text:str,repeats=False):
@@ -300,9 +359,9 @@ class GreatDalmuti(CardGame):
                 playing=self.players[turn]
                 if playing.hand:
                     if last_played:
-                        await self.send("Last played: %s. %s, choose cards to play or pass!" % (" ".join(c.emoji for c in last_played),playing.name))
+                        await self.send("Last played: %s. %s, choose cards to play or pass!" % (" ".join(c.emoji for c in last_played),playing.tag))
                     else:
-                        await self.send("%s, choose cards to lead with!" % playing.name)
+                        await self.send("%s, choose cards to lead with!" % playing.tag)
                     while True:
                         i=await self.wait_for_text(playing,"",False,lambda t,p=playing:t=="pass" or self.valid_play(p,t),
                             faked=random.choice([c.short for c in playing.hand]) if not last_played or (len(last_played)==1 and random.randint(0,1)) else "pass")
@@ -331,6 +390,7 @@ class GreatDalmuti(CardGame):
                                     await self.send("%s is out of cards!" % playing.name)
                                     next_order.append(playing)
                                 turn+=1
+                                passes=0
                             break
                 else:
                     passes += 1

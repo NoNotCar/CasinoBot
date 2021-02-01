@@ -4,7 +4,6 @@ from discord.ext import commands
 from economy import get_user, register_1v1, register_ranked
 import asyncio
 import random
-import trueskill
 import typing
 import string
 from collections import defaultdict
@@ -53,6 +52,9 @@ def thea(name:str,singular:bool) -> str:
 def to_emoji(thing)->str:
     if isinstance(thing,int):
         return [":zero:",":one:",":two:",":three:",":four:",":five:",":six:",":seven:",":eight:",":nine:"][thing]
+    elif isinstance(thing,str):
+        return ":regional_indicator_%s:" % thing.lower()
+    return "[ERROR]"
 def revolve(l:typing.List):
     if l:
         l.append(l.pop(0))
@@ -80,6 +82,30 @@ async def chain(coros):
 async def smart_chain(coros:typing.List[typing.Coroutine],keys:typing.List)->typing.Dict:
     results=await chain(coros)
     return {k:results[n] for n,k in enumerate(keys)}
+class TextTimer(object):
+    msg=None
+    RESOLUTION = 1
+    paused = False
+    def __init__(self,time_remaining:int,channel:discord.TextChannel,message="Time Remaining: %s",interval=10):
+        self.time = time_remaining
+        self.message = message
+        self.interval = interval
+        self.channel = channel
+    async def run(self,remsg = True):
+        if remsg or not self.msg:
+            self.msg = await self.channel.send(self.message % self.formatted_time)
+        while not self.done:
+            await asyncio.sleep(self.RESOLUTION)
+            if not self.paused:
+                self.time-=self.RESOLUTION
+                if not self.time%self.interval:
+                    await self.msg.edit(content=self.message % self.formatted_time)
+    @property
+    def formatted_time(self):
+        return f"{self.time//60}:{self.time%60:02d}"
+    @property
+    def done(self):
+        return self.time<=0
 class FakeUser(object):
     def __init__(self):
         self.uid=random.randint(0,2**32)
@@ -88,7 +114,7 @@ class FakeUser(object):
     async def dm(self,msg):
         print("%s was DMed %s" % (self.nick,msg))
     def get_elo(self,game):
-        return trueskill.Rating()
+        return 0
     def set_elo(self,game,new):
         pass
     @property
@@ -111,7 +137,7 @@ class BasePlayer(object):
         self.fake=fake
         self.hand=[]
     async def dm(self,msg):
-        await self.user.dm(msg)
+        return await self.user.dm(msg)
     @property
     def name(self):
         return self.user.nick
@@ -134,6 +160,7 @@ class BaseGame(object):
     done=False
     info={}
     shameable=True
+    dunnit = None
     def __init__(self,ctx):
         self.players=[]
         self.channel=ctx.channel
@@ -158,14 +185,22 @@ class BaseGame(object):
             self.players.append(author)
     async def run(self,*modifiers):
         pass
-    async def wait_for_tag(self,chooser,choices):
-        return (await self.wait_for_multitag(chooser,choices,1,1))[0]
-    async def wait_for_multitag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],mn:int,mx:int):
-        if chooser.fake:
+    async def wait_for_tag(self,choosers,choices):
+        return (await self.wait_for_multitag(choosers,choices,1,1))[0]
+    async def wait_for_multitag(self,choosers:typing.Union[list,BasePlayer],choices:typing.List[BasePlayer],mn:int,mx:int):
+        self.dunnit=None
+        if choosers is BasePlayer:
+            choosers=[choosers]
+        if all(c.fake for c in choosers):
+            self.dunnit=random.choice(choosers)
             return random.sample(choices,mn)
-        chooser.busy=True
-        m = await self.bot.wait_for("message",check=lambda m:m.channel==self.channel and m.author == chooser.du and mn<=len(m.mentions)<=mx and all(u in [c.du for c in choices] for u in m.mentions))
-        chooser.busy=False
+        for c in choosers:
+            c.busy=True
+        m = await self.bot.wait_for("message",check=lambda m:m.channel==self.channel and m.author in [c.du for c in choosers] and mn<=len(m.mentions)<=mx and all(u in [c.du for c in choices] for u in m.mentions))
+        for c in choosers:
+            c.busy = False
+            if c.du==m.author:
+                self.dunnit=c
         return [c for c in choices if c.du in m.mentions]
     async def dm_tag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],null=False):
         if null:

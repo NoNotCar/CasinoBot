@@ -187,8 +187,6 @@ class Game(dib.BaseGame):
                 await self.channel.send("%s has done their part!" % player.name)
                 return action
     async def mission_phase(self,party):
-        for p in party:
-            await task(p.dm("Time to quest! Mission options: "+" ,".join('"%s"' % o for o in p.role.mission_options)))
         result=await asyncio.gather(*[self.wait_for_action(p) for p in party])
         random.shuffle(result)
         self.past_missions.append((party,result))

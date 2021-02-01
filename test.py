@@ -11,6 +11,7 @@ import asyncio
 import drawful
 from avalon import avalon
 from mafia import mafia
+import forsale
 
 class FakeContext(object):
     bot=None
@@ -36,15 +37,17 @@ class TestAllGames(unittest.IsolatedAsyncioTestCase):
     games=[
         #drawful.Drawful,
         #avalon.Game,
-        mafia.Mafia,
+        #mafia.Mafia,
         # shitler.Game,
         # one_word.OneWord,
-        # cards.Hearts,
+        #cards.Hearts,
+        #cards.OhHell,
         # telestrations.Telestrations,
         # penguins.Game,
         # turbostrations.Turbostrations,
         #decrypto.Decrypto
-        cards.GreatDalmuti
+        #cards.GreatDalmuti,
+        forsale.ForSale
         ]
     async def test_min_players(self):
         for g in self.games:

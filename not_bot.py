@@ -24,6 +24,10 @@ import quiplash
 from avalon import avalon
 from mafia import mafia
 import haiclue
+import no_thanks
+import boggle
+import forsale
+import spyfall
 import dib
 from bottoken import token
 import traceback

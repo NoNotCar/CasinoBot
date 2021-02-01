@@ -42,6 +42,9 @@ class Decrypto(dib.BaseGame):
     name = "decrypto"
     min_players = 4
     async def run(self,*modifiers):
+        agnijo = "agnijo" in modifiers
+        if agnijo:
+            await self.send(":warning::sleeping::warning: TIMER DISABLED :warning::sleeping::warning:")
         gs=GameState(":red_circle:",":blue_circle:")
         random.shuffle(self.players)
         left_team = self.players[::2]
@@ -65,7 +68,7 @@ class Decrypto(dib.BaseGame):
                                       confirmation="%s has submitted their clues!",
                                       faked="dog,cat,horse") for n,p in enumerate(codemasters)]
             tasks=[asyncio.create_task(t) for t in tasks]
-            await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait(tasks,return_when=(asyncio.ALL_COMPLETED if agnijo else asyncio.FIRST_COMPLETED))
             try:
                 not_done = next(t for t in tasks if not t.done())
                 nidx = tasks.index(not_done)

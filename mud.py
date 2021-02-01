@@ -72,7 +72,7 @@ class ActionManager(object):
             else:
                 split=[s.lower() for s in m.content.split()]
                 if action:=adict.get(split[0],False):
-                    err=action.valid(self.game,self.player,split[1:])
+                    err=await action.valid(self.game,self.player,split[1:])
                     if err is True:
                         await action.execute(self.game,self.player)
                     else:
