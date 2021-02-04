@@ -28,6 +28,7 @@ import no_thanks
 import boggle
 import forsale
 import spyfall
+from dominion import base
 import dib
 from bottoken import token
 import traceback

@@ -4,9 +4,9 @@ import random
 
 locations = {"Theater":":performing_arts:","Restaurant":":fork_knife_plate:","Beach":":beach:",
 "School":":school_satchel:","Supermarket":":apple:","Service Station":":blue_car:",
-"Circus":"circus_tent:","Hospital":":hospital:","Crusader Army":":cross:","Train":":train2:","Bank":":moneybag:",
+"Circus":":circus_tent:","Hospital":":hospital:","Crusader Army":":cross:","Train":":train2:","Bank":":moneybag:",
              "Airplane":":airplane:","Police Station":":cop:","Pirate Ship":":pirate_flag:","Movie Studio":":movie_camera:",
-             "Army Base":":military_helmet:","Submarine":":submarine:","Cruise Ship":":cruise_ship:","Polar Station":":penguin:",
+             "Army Base":":military_helmet:","Submarine":":ocean:","Cruise Ship":":cruise_ship:","Polar Station":":penguin:",
              "Love Hotel":":love_hotel:","Corporate Party":":bar_chart:","Day Spa":":nail_care:","University":":student:",
              "Embassy":":flag_gb:","Space Station":":astronaut:","Casino":":game_die:","Cathedral":":church:"}
 def emojified(l:str):
@@ -47,7 +47,7 @@ class Spyfall(dib.BaseGame):
                 await s.dm("You are a spy! Find out the location before you're found out!")
             first = random.choice(self.players)
             await self.send("Anyone can accuse someone by tagging them in this chat.\n%s, you're asking the first question!" % first.tag)
-            timer = dib.TextTimer(300,self.channel)
+            timer = dib.TextTimer(8*60,self.channel)
             while not all(s.done for s in spies) and any(n.vote for n in normies):
                 undone = [p for p in self.players if not p.done]
                 can_call_votes = [p for p in undone if p.vote]
@@ -85,7 +85,7 @@ class Spyfall(dib.BaseGame):
                                 await self.send("The vote wasn't successful. The game continues...")
                         else:
                             for s in spies:
-                                if s.guess:
+                                if s.guess and not s.done:
                                     s.done = True
                                     if s.guess==location:
                                         await self.send(f"{s.name} was a spy, and guessed the location correctly!")

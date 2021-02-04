@@ -161,6 +161,8 @@ class BaseGame(object):
     info={}
     shameable=True
     dunnit = None
+    queued=""
+    no_pump=True
     def __init__(self,ctx):
         self.players=[]
         self.channel=ctx.channel
@@ -188,6 +190,7 @@ class BaseGame(object):
     async def wait_for_tag(self,choosers,choices):
         return (await self.wait_for_multitag(choosers,choices,1,1))[0]
     async def wait_for_multitag(self,choosers:typing.Union[list,BasePlayer],choices:typing.List[BasePlayer],mn:int,mx:int):
+        await self.pump()
         self.dunnit=None
         if choosers is BasePlayer:
             choosers=[choosers]
@@ -225,6 +228,7 @@ class BaseGame(object):
         for p in players:
             p.busy=True
         while True:
+            await self.pump()
             chosen = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in [p.du for p in players] and m.content)
             if chosen.content.lower() in option_dict:
                 for p in players:
@@ -238,6 +242,8 @@ class BaseGame(object):
             return r if isinstance(r,tuple) else (r,)
         choice=await self.choose_option(player,private,sum((g(o) for o in options),()),msg,secret)
         return next(o for o in options if choice in g(o))
+    async def yn_option(self,player,private,msg="Do it?"):
+        return (await self.choose_option(player,private,["yes","no"],msg,True))=="yes"
     async def choose_number(self, player, private, mn, mx, msg=""):
         return await self.smart_options(player,private,list(range(mn,mx+1)),str,msg,True)
     async def wait_for_shout(self,msg="Speak now: ",valids=None):
@@ -248,9 +254,9 @@ class BaseGame(object):
         if msg:
             await self.send(msg)
         vdict={p.du:p for p in valids}
-        while True:
-            message = await self.bot.wait_for("message",check=lambda m: m.channel == self.channel and m.author in vdict and m.content)
-            return vdict[message.author]
+        await self.pump()
+        message = await self.bot.wait_for("message",check=lambda m: m.channel == self.channel and m.author in vdict and m.content)
+        return vdict[message.author]
     async def wait_for_text(self,player,msg="Type something: ",private=True,validation=lambda t: len(t),confirmation="",faked="poop"):
         players = player if isinstance(player, list) else [player]
         if all(p.fake for p in players):
@@ -262,6 +268,7 @@ class BaseGame(object):
             p.busy=True
         tchannel = players[0].dmchannel if private else self.channel
         while True:
+            await self.pump()
             message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in [p.du for p in players] and m.content)
             if validation(message.content):
                 if confirmation:
@@ -280,6 +287,7 @@ class BaseGame(object):
         tchannel = player.dmchannel if private else self.channel
         player.busy=True
         while True:
+            await self.pump()
             message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author == player.du and m.attachments)
             u = message.attachments[0].url
             if u[-4:] != ".png":
@@ -288,6 +296,7 @@ class BaseGame(object):
                 player.busy=False
                 return u
     async def end_game(self,winners,losers=None,draw=False):
+        await self.pump()
         if losers is None:
             losers=[p for p in self.players if p not in winners]
         self.done=True
@@ -297,7 +306,9 @@ class BaseGame(object):
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
         else:
             await self.send("No elo change - nobody or everybody won!")
+        await self.pump()
     async def end_ranked(self,porder:typing.List[typing.List[BasePlayer]]):
+        await self.pump()
         self.done=True
         if len(porder)>1:
             register_ranked(self.name,[[p.user for p in ps] for ps in porder])
@@ -305,6 +316,7 @@ class BaseGame(object):
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
         else:
             await self.send("No elo change - nobody or everybody won!")
+        await self.pump()
     async def end_points(self):
         points=defaultdict(list)
         for p in self.players:
@@ -313,7 +325,19 @@ class BaseGame(object):
     async def show_scoreboard(self,final=False):
         await self.send(("FINAL SCOREBOARD:\n" if final else "CURRENT SCOREBOARD:\n")+"\n".join("%s: %s" % (p.name,p.points) for p in self.players))
     async def send(self,msg:str="",**kwargs):
-        await self.channel.send(msg,**kwargs)
+        if kwargs or self.no_pump:
+            await self.pump()
+            await self.channel.send(msg,**kwargs)
+        else:
+            if len(self.queued+"\n"+msg)>2000:
+                self.pump()
+                self.queued=msg
+            else:
+                self.queued+="\n"+msg
+    async def pump(self):
+        if self.queued:
+            await self.channel.send(self.queued)
+            self.queued=""
     @property
     def ashamed(self):
         return [p for p in self.players if p.busy]
@@ -350,7 +374,9 @@ class Games(commands.Cog):
                 g = self.game_classes[game](ctx)
                 self.games[ctx.channel] = g
                 if await g.join(ctx.author):
+                    await g.pump()
                     return g
+                await g.pump()
             else:
                 await ctx.send("Game not found: %s" % game)
     @commands.command(name="join", help="Join a game in this channel")
@@ -359,7 +385,9 @@ class Games(commands.Cog):
         if ctx.channel in self.games:
             u = get_user(ctx.author)
             u.nick=ctx.author.display_name
-            return await self.games[ctx.channel].join(ctx.author)
+            success = await self.games[ctx.channel].join(ctx.author)
+            await self.games[ctx.channel].pump()
+            return success
         else:
             await ctx.send("No games currently in this channel...")
 
@@ -418,6 +446,10 @@ class Games(commands.Cog):
     @commands.command(name="info",help="Find information about something in the game you're currently playing")
     async def info(self,ctx,*,key):
         key=key.lower()
+        if game := self.games.get(ctx.channel, None):
+            if key in game.info:
+                await ctx.send(game.info[key])
+                return
         success=False
         for g in self.game_classes.values():
             if key in g.info:

@@ -92,6 +92,12 @@ class Decrypto(dib.BaseGame):
             results = await dib.gather([self.wait_for_text([p for p in teams[n] if p != codemasters[n]], "", False,get_guess, "%s's team submitted their guess!",random_guess()) for n in range(2)])
             results=[get_guess(r) for r in results]
             failure=False
+            for n in range(2):
+                codemaster[n]+=1
+                codemaster[n]%=len(teams[n])
+                for idx,w in enumerate(codes[n]):
+                    if clues[n]:
+                        gs.add_clue(n,w,get_valid_clue(clues[n])[idx])
             for n,e in enumerate(gs.emojis):
                 if guesses and guesses[n]==codes[1-n]:
                     intercepts[n]+=1
@@ -106,12 +112,6 @@ class Decrypto(dib.BaseGame):
             if any(t==2 for t in intercepts+miscoms):
                 break
             await self.send("The game continues...\nCurrent miscommunications: %s\nCurrent interceptions: %s" % ("-".join(str(m) for m in miscoms),"-".join(str(i) for i in intercepts)))
-            for n in range(2):
-                codemaster[n]+=1
-                codemaster[n]%=len(teams[n])
-                for idx,w in enumerate(codes[n]):
-                    if clues[n]:
-                        gs.add_clue(n,w,get_valid_clue(clues[n])[idx])
             for e in gs.get_embeds():
                 await self.send(embed=e)
         totals = [intercepts[n] ** 2 - miscoms[n] ** 2 for n in range(2)]
