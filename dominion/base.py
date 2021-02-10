@@ -10,7 +10,11 @@ import collections
 import re
 from functools import total_ordering
 def camel_case_split(s:str)->str:
-    return "".join(re.findall(r'[A-Z](?:[a-z]+|[A-Z]*(?=[A-Z]|$))', s))
+    return " ".join(re.findall(r'[A-Z](?:[a-z]+|[A-Z]*(?=[A-Z]|$))', s))
+def substrings(s:str):
+    split = s.split()
+    for n,s in enumerate(split):
+        yield " ".join(split[:n+1])
 @total_ordering
 class Cost(object):
     def __init__(self,coins=0,potions=0,debt=0):
@@ -45,9 +49,16 @@ class Card(object):
     desc = ""
     async def play(self,game:Dominion,player:DPlayer):
         pass
+    def on_draw(self,player:DPlayer):
+        pass
+    async def on_gain(self,game:Dominion,player:DPlayer):
+        return False
     @classmethod
     def get_supply(cls,players:int):
         return cls.total
+    @classmethod
+    def setup(cls,game:Dominion):
+        pass
     @property
     def name(self):
         return self.override_name or camel_case_split(self.__class__.__name__)
@@ -97,7 +108,7 @@ class Treasure(Card):
     def __init__(self):
         super().__init__()
         self.extype = self.extype + ("TREASURE",)
-class SimpleTreasure(Card):
+class SimpleTreasure(Treasure):
     income = 1
     async def play(self,game:Dominion,player:DPlayer):
         player.coins+=self.income
@@ -136,11 +147,16 @@ class Action(Card):
     def __init__(self):
         super().__init__()
         self.extype=self.extype+("ACTION",)
+class Night(Card):
+    def __init__(self):
+        super().__init__()
+        self.extype=self.extype+("NIGHT",)
 class Reaction(Card):
+    hand = ""
     def __init__(self):
         super().__init__()
         self.extype=self.extype+("REACTION",)
-    async def react(self,game:Dominion,player:DPlayer,event:str):
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
         pass
 class Attack(Card):
     def __init__(self):
@@ -151,6 +167,7 @@ class Attack(Card):
         for delta in range(1,len(game.players)):
             p=game.players[(game.players.index(player)+delta)%len(game.players)]
             blocked=False
+            await p.react(game, "attacked", card=self)
             for c in p.hand:
                 if isinstance(c,Defence):
                     await c.on_block(game,player,p)
@@ -227,10 +244,14 @@ class DPlayer(dib.BasePlayer):
         return cards
     def draw(self,n=1):
         cards = self.xdraw(n)
+        self.draw_cards(cards)
+        return cards
+    def draw_cards(self,cards:typing.List[Card]):
         if cards:
             self.hand.extend(cards)
             self.update_hand()
-        return len(cards)
+        for c in cards:
+            c.on_draw(self)
     def redraw(self,update=True):
         self.discard.dump(self.hand)
         self.discard.dump(self.active)
@@ -243,15 +264,19 @@ class DPlayer(dib.BasePlayer):
         self.actions_played=0
         if update:
             self.update_hand(True)
-    async def react(self,game:Dominion,event:str):
-        for c in self.reactions[event][:]:
-            if await c.react(game,self):
-                self.reactions[event].remove(c)
+    async def react(self,game:Dominion,event:str,**kwargs):
+        for e in substrings(event):
+            for c in self.reactions[e][:]:
+                if await c.react(game,self,e,**kwargs):
+                    self.reactions[e].remove(c)
+            for c in self.hand[:]:
+                if isinstance(c,Reaction) and c.hand==e:
+                    await c.react(game,self,e,**kwargs)
     @property
     def all_cards(self):
         return self.hand+self.discard.contents+self.deck.contents+self.active
 BASIC = [Curse,Estate,Duchy,Province,Copper,Silver,Gold]
-EXPANSIONS = ["vanilla","unhinged"]
+EXPANSIONS = ["vanilla","unhinged","intrigue","contests"]
 class Dominion(dib.BaseGame):
     name = "dominion"
     min_players = 1
@@ -259,19 +284,25 @@ class Dominion(dib.BaseGame):
     playerclass = DPlayer
     phase = "ACTION"
     no_pump = False
+    has_ai = True
     def __init__(self,ctx):
         super().__init__(ctx)
         self.supplies = {}
+        self.nonsupplies = {}
         self.trashpile = CardPile()
     def add_supply_pile(self,card:typing.Type[Card]):
         self.supplies[card]=SupplyPile(card,len(self.players))
-    def gain(self,player:DPlayer,card:typing.Type[Card],destination = "discard",cloned=False):
+        card.setup(self)
+    def add_nonsupply_pile(self,card:typing.Type[Card]):
+        self.nonsupplies[card] = SupplyPile(card, len(self.players))
+    async def gain(self,player:DPlayer,card:typing.Type[Card],destination = "discard",cloned=False):
         if cloned:
             return player.discard.add(card())
-        if card in self.supplies:
-            supply = self.supplies[card]
+        if supply:=(self.supplies.get(card,None) or self.nonsupplies.get(card,None)):
             if not supply.empty:
                 card = supply.take()
+                if alt_dest:=await card.on_gain(self,player) and destination=="discard":
+                    destination=alt_dest
                 if destination=="discard":
                     player.discard.add(card)
                 elif destination=="hand":
@@ -319,7 +350,7 @@ class Dominion(dib.BaseGame):
     async def play_card(self,player:DPlayer,card:Card):
         if card in player.hand:
             player.hand.remove(card)
-        if card not in player.active:
+        if card not in player.active and card not in self.trashpile.contents:
             player.active.append(card)
         if self.phase=="ACTION":
             player.actions_played+=1
@@ -330,20 +361,25 @@ class Dominion(dib.BaseGame):
     async def trash(self,player:DPlayer,cards:typing.Union[Card,typing.List[Card]]):
         if isinstance(cards,Card):
             cards=[cards]
-        self.trashpile.dump(cards)
+        for c in cards:
+            await player.react(self,f"trashed {c.name}",card=c)
         await self.send(f"{player.name} trashed a {dib.smart_list([c.name for c in cards])}!")
+        self.trashpile.dump(cards)
     async def discard(self,player:DPlayer,cards:typing.Union[Card,typing.List[Card]]):
         if isinstance(cards,Card):
             cards=[cards]
-        player.discard.dump(cards)
         await self.send(f"{player.name} discarded a {dib.smart_list([c.name for c in cards])}!")
-    async def view_supplies(self):
-        await self.send("SUPPLIES")
-        await self.send("".join(s.text for c,s in self.supplies.items() if c in BASIC))
-        await self.send("KINGDOM CARDS")
+        player.discard.dump(cards)
+    def view_supplies(self):
         kingdom = sorted((s for c,s in self.supplies.items() if c not in BASIC),key=lambda s:s.card.cost)
-        for ss in [kingdom[n*5:n*5+5] for n in range((len(kingdom)+4)//5)]:
-            await self.send("".join(s.text for s in ss))
+        s = f"""SUPPLIES
+{"".join(s.text for c,s in self.supplies.items() if c in BASIC)}
+KINGDOM CARDS
+{"".join(s.text for s in kingdom[:5])}
+{"".join(s.text for s in kingdom[5:])}"""
+        if self.nonsupplies:
+            s+=f"\nNON-SUPPLY CARDS\n{''.join(s.text for s in self.nonsupplies.values())}"
+        return s
     async def autoplay_treasures(self,player:DPlayer):
         await player.dm("Autoplaying Treasures...")
         while True:
@@ -353,6 +389,17 @@ class Dominion(dib.BaseGame):
                     break
             else:
                 break
+    async def ai_action(self,player:DPlayer):
+        if self.phase=="ACTION":
+            await self.autoplay_treasures(player)
+            money = player.coins+player.coffers-player.debt
+            if money>=8:
+                return "buy province"
+            elif money>=6:
+                return "buy gold"
+            elif money>=3:
+                return "buy silver"
+        return "pass"
     async def run(self,*modifiers):
         if not modifiers:
             modifiers=["vanilla"]
@@ -368,18 +415,23 @@ class Dominion(dib.BaseGame):
         self.info={s().name.lower():s().full_desc for s in self.supplies}
         for p in self.players:
             for _ in range(7):
-                self.gain(p,Copper,cloned=True)
+                await self.gain(p,Copper,cloned=True)
             for _ in range(3):
-                self.gain(p,Estate,cloned=True)
+                await self.gain(p,Estate,cloned=True)
             p.redraw(False)
         random.shuffle(self.players)
         while True:
+            await self.send(self.view_supplies())
             for p in self.players:
-                await self.view_supplies()
-                await self.send(f"{p.tag}, it's your turn!")
+                if not p.fake:
+                    await p.dm(self.view_supplies())
+                    await self.send(f"{p.tag}, it's your turn!")
                 self.phase = "ACTION"
                 while True:
-                    i = (await self.wait_for_text(p,"Choose a card to play/buy, or pass",faked="pass")).lower()
+                    if not p.fake:
+                        i = (await self.wait_for_text(p,"Choose a card to play/buy, or pass",validation=lambda t:len(t) and t[0]!="$")).lower()
+                    else:
+                        i=await self.ai_action(p)
                     if i=="pass":
                         await self.send(f"{p.name} has passed!")
                         break
@@ -398,16 +450,15 @@ class Dominion(dib.BaseGame):
                             try:
                                 to_buy = i.split(maxsplit=1)[1]
                                 if buying:=self.parse_card(to_buy,[s.top for s in self.supplies.values() if s]):
-                                    print(p.coffers)
                                     if buying.cost<=p.coins+p.coffers:
                                         p.coffers-=max(0,buying.cost-p.coins)
                                         p.coins-=min(buying.cost,p.coins)
                                         p.buys-=1
-                                        self.gain(p,buying.__class__)
+                                        await self.gain(p,buying.__class__)
                                         await p.dm(f"Buying successful!")
                                         await self.send(f"{p.name} bought a {buying.name}!")
-                                        if not p.buys:
-                                            await p.dm("No buys left, automatically ending turn!")
+                                        if not p.buys or any(isinstance(c,Night) for c in p.hand):
+                                            await p.dm("No Buys or Nights left, automatically ending turn!")
                                             break
                                     else:
                                         await p.dm("You don't have enough CASH MONEY to buy that!")
@@ -422,11 +473,14 @@ class Dominion(dib.BaseGame):
                         try:
                             self.phase=next(e for e in to_play.extype if e in porder and (porder.index(e)>=porder.index(self.phase)))
                             if self.phase=="ACTION":
-                                if not p.actions:
-                                    await p.dm("You don't have any actions left!")
+                                if not (p.actions or p.villagers):
+                                    await p.dm("You don't have any actions or villagers left!")
                                     continue
                                 else:
-                                    p.actions-=1
+                                    if p.actions:
+                                        p.actions-=1
+                                    else:
+                                        p.villagers-=1
                                     p.update_hand()
                             await self.play_card(p,to_play)
                         except StopIteration:

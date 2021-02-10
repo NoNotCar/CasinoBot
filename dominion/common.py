@@ -4,7 +4,7 @@ async def cost_limited_gain(game:Dominion,player:DPlayer,max_cost:int,f:typing.C
     valid = [s.top for c, s in game.supplies.items() if s and c.cost <= max_cost and f(s.top)]
     if valid:
         chosen = await game.choose_card(player, valid, msg="Choose a card to gain!")
-        game.gain(player,chosen.__class__,destination)
+        await game.gain(player,chosen.__class__,destination)
         player.update_hand()
         await game.send(f"{player.name} gained a {chosen.name}!")
         return chosen

@@ -93,6 +93,7 @@ class Spyfall(dib.BaseGame):
                                     else:
                                         await self.send(f"{s.name} was a spy, and got the location wrong!")
                                         s.points-=1
+            await self.send(f"(The location was {location})")
             await self.show_scoreboard(n==self.ROUNDS-1)
         await self.end_points()
 

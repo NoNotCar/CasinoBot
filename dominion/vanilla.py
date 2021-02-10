@@ -7,8 +7,8 @@ class Cellar(Action):
     async def play(self,game:Dominion,player:DPlayer):
         player.actions+=1
         to_discard = await game.choose_cards(player,player.hand,msg="Choose any number of cards to discard!")
-        player.discard.dump(to_discard)
         player.draw(len(to_discard))
+        player.discard.dump(to_discard)
 class Chapel(Action):
     cost = 2
     desc = "Trash up to 4 cards from your hand"
@@ -87,7 +87,7 @@ class Bureaucrat(Action,Attack):
     desc = "Gain a Silver onto your deck.\nEach other player puts a Victory card onto their deck."
     cost = 4
     async def bonus(self,game:Dominion,player:DPlayer):
-        game.gain(player,Silver)
+        await game.gain(player,Silver)
     async def attack(self, game: Dominion, target: DPlayer, attacker):
         chosen = await game.choose_card(target,[c for c in target.hand if "VICTORY" in c.extype],msg="Choose a Victory card to topdeck!")
         if chosen:
@@ -198,7 +198,7 @@ class Witch(Action,Attack):
     async def bonus(self,game:Dominion,player:DPlayer):
         player.draw(2)
     async def attack(self, game: Dominion, target: DPlayer, attacker):
-        game.gain(target,Curse)
+        await game.gain(target,Curse)
 class Moat(Action,Defence):
     cost = 2
     desc = "+2 Cards"
@@ -212,7 +212,7 @@ class Merchant(Vanilla,Reaction):
     async def play(self,game:Dominion,player:DPlayer):
         await super().play(game,player)
         player.reactions["play Silver"].append(self)
-    async def react(self,game:Dominion,player:DPlayer,event:str):
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
         player.coins+=1
         return True
     @property
@@ -222,7 +222,7 @@ class Bandit(Action,Attack):
     cost = 5
     desc = "Gain a Gold. Each other player reveals the top 2 cards of their deck, trashes a revealed Treasure other than Copper, and discards the rest."
     async def bonus(self,game:Dominion,player:DPlayer):
-        game.gain(player,Gold)
+        await game.gain(player,Gold)
     async def attack(self, game: Dominion, target: DPlayer, attacker):
         drawn = target.xdraw(2)
         trashing = await game.choose_card(target,drawn,False,f"You drew {dib.smart_list([c.name for c in drawn if 'TREASURE' in c.extype and not isinstance(c,Copper)])}. Choose a Treasure to trash.")
@@ -251,7 +251,7 @@ class Artisan(Action):
     desc = "Gain a card to your hand costing up to £5.\nPut a card from your hand onto your deck."
     async def play(self,game:Dominion,player:DPlayer):
         await common.cost_limited_gain(game,player,5,destination="hand")
-        player.hand.extend(await game.choose_cards(player,player.hand,1,1,"Choose a card to topdeck!"))
+        player.deck.dump(await game.choose_cards(player,player.hand,1,1,"Choose a card to topdeck!"))
 cards = [Cellar,Chapel,Harbinger,Vassal,Village,Workshop,Bureaucrat,Gardens,Militia,Moneylender,Poacher,Remodel,Smithy,ThroneRoom,
          Festival,Market,Mine,Lab,CouncilRoom,Witch,Moat,Merchant,Bandit,Library,Artisan]
 print(len(cards))

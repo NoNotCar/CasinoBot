@@ -129,11 +129,32 @@ class FakeUser(object):
     @property
     def mention(self):
         return "@"+self.nick
+class AIUser(object):
+    def update_balance(self,delta):
+        return True
+    async def dm(self,msg):
+        pass
+    def get_elo(self,game):
+        return 100
+    def set_elo(self,game,new):
+        pass
+    @property
+    def name(self):
+        return "CasinoBot"
+    @property
+    def nick(self):
+        return "CasinoBot"
+    @property
+    def user(self):
+        return self
+    @property
+    def mention(self):
+        return "@"+self.nick
 class BasePlayer(object):
     points=0
     busy=False
     def __init__(self,user,fake=False):
-        self.user=FakeUser() if fake else user
+        self.user=AIUser() if fake=="ai" else FakeUser() if fake else user
         self.fake=fake
         self.hand=[]
     async def dm(self,msg):
@@ -163,6 +184,7 @@ class BaseGame(object):
     dunnit = None
     queued=""
     no_pump=True
+    has_ai = False
     def __init__(self,ctx):
         self.players=[]
         self.channel=ctx.channel
@@ -214,6 +236,8 @@ class BaseGame(object):
         await chooser.dm("Thanks!")
         return None if n==1 and null else choices[n-1-null]
     async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False):
+        if len(options)==1:
+            return options[0]
         players=player if isinstance(player,list) else [player]
         if all(p.fake for p in players):
             return random.sample(options,1)[0]
@@ -415,19 +439,29 @@ class Games(commands.Cog):
         else:
             await ctx.send("no game in this channel...")
     @commands.command(name="challenge",help="challenge someone to a 2 player game in this channel")
-    async def challenge(self,ctx,target:discord.Member,game:str):
+    async def challenge(self,ctx,target:discord.Member,game:str,*modifiers):
+        ai=(target==self.bot.user)
         if new_game:=await self.start(ctx, game):
-            await ctx.send("%s, you've been challenged to a game of %s! Type \"yes\" to accept!"  % (target.display_name,game))
-            m=await self.bot.wait_for("message",check=lambda m: m.author==target)
-            if m.content.lower()=="yes":
-                if await new_game.join(target):
-                    await self.begin(ctx)
+            if ai:
+                if new_game.has_ai:
+                    if await self.add_ai_player(ctx):
+                        await self.begin(ctx,*modifiers)
+                    else:
+                        await ctx.send("Are _you_ nicknamed CasinoBot???")
                 else:
-                    await ctx.send("Something went wrong when trying to join the game...")
-                    await self.stop(ctx)
+                    await ctx.send("Sorry, I can't play that game yet")
             else:
-                await ctx.send(":cry:")
-                await self.stop(ctx)
+                await ctx.send("%s, you've been challenged to a game of %s! Type \"yes\" to accept!"  % (target.display_name,game))
+                m=await self.bot.wait_for("message",check=lambda m: m.author==target)
+                if m.content.lower()=="yes":
+                    if await new_game.join(target):
+                        await self.begin(ctx,*modifiers)
+                    else:
+                        await ctx.send("Something went wrong when trying to join the game...")
+                        await self.stop(ctx)
+                else:
+                    await ctx.send(":cry:")
+                    await self.stop(ctx)
     @commands.command(name="fake",help="Add a fake player to the current game")
     @commands.is_owner()
     async def add_fake_player(self,ctx,number=1):
@@ -440,6 +474,21 @@ class Games(commands.Cog):
                 await game.join(game.playerclass(None, True))
             else:
                 await ctx.send("No games currently in this channel...")
+    @commands.command(name="ai",help="Adds CasinoBot to the current game")
+    async def add_ai_player(self,ctx):
+        self.refresh()
+        if game:=self.games.get(ctx.channel,None):
+            if game.has_ai:
+                if not any(p.name=="CasinoBot" for p in game.players):
+                    await ctx.send("I joined the game!")
+                    await game.join(game.playerclass(None, "ai"))
+                    return True
+                else:
+                    await ctx.send("Either I'm already playing, or someone's impersonating me!")
+            else:
+                await ctx.send("Sorry, I don't know how to play that game...")
+        else:
+            await ctx.send("No games currently in this channel...")
     @commands.command(name="games",help="show all current games")
     async def games(self,ctx):
         await ctx.send("Current games: "+", ".join(self.game_classes.keys()))

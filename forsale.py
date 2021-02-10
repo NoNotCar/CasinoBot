@@ -34,6 +34,8 @@ class ForSale(dib.BaseGame):
             available = [estates.pop() for _ in enumerate(self.players)]
             available.sort()
             await self.send("NEW PROPERTIES ON THE MARKET: "+", ".join(card_text(a) for a in available))
+            for p in self.players:
+                await p.dm("You have £%sk left" % p.points)
             out = []
             while len(out)<len(self.players)-1:
                 cp = self.players[turn]
@@ -73,7 +75,7 @@ class ForSale(dib.BaseGame):
                 prices.append(asales.pop())
             prices.sort()
             await self.send("TIME TO SELL SOME PROPERTY! Current prices: "+ ", ".join("£%sk" % p for p in prices))
-            choices = await dib.gather([self.smart_options(p,True,p.bought,str,"Choose a property to sell! Options: "+", ".join(card_text(b) for b in p.bought)) for p in self.players])
+            choices = await dib.gather([self.smart_options(p,True,p.bought,str,"Choose a property to sell! Options: "+", ".join(card_text(b) for b in sorted(p.bought)),True) for p in self.players])
             for n,p in enumerate(self.players):
                 sold = choices[n]
                 earnings = prices[rank(sold,choices)]

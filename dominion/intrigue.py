@@ -26,8 +26,9 @@ class Lurker(Action):
                 player.discard.add(gain)
 class Masquerade(Action):
     cost = 3
-    desc = "Each player with any cards in hand passes one to the next such player (in turn order), at once. Then you may trash a card from your hand."
+    desc = "+2 Cards\nEach player with any cards in hand passes one to the next such player (in turn order), at once. Then you may trash a card from your hand."
     async def play(self,game:Dominion,player:DPlayer):
+        player.draw(2)
         masquerading = [p for p in game.players if p.hand]
         passing = await dib.gather([game.choose_card(p,p.hand,msg="Choose a card to pass!") for p in masquerading])
         for n,p in enumerate(passing):
@@ -72,7 +73,7 @@ class Swindler(Action,Attack):
             valid = [s.top for c, s in game.supplies.items() if s and c.cost==trashing.cost]
             if valid:
                 chosen = await game.choose_card(attacker, valid, msg=f"{target.name} trashed a {trashing.name}. Choose a card costing {trashing.cost} for them to gain!")
-                game.gain(target, chosen.__class__)
+                await game.gain(target, chosen.__class__)
                 target.update_hand()
                 await game.send(f"{target.name} gained a {chosen.name}!")
             else:
@@ -107,7 +108,7 @@ class Baron(Action):
             await game.discard(player,target)
             player.coins+=4
         else:
-            game.gain(player,Estate)
+            await game.gain(player,Estate)
         player.update_hand()
 class Conspirator(Action):
     cost = 4
@@ -141,6 +142,8 @@ class MiningVillage(Village):
         if self in player.active and await game.yn_option(player,True,"Trash this?"):
             player.coins+=2
             player.update_hand()
+            player.active.remove(self)
+            game.trash(player,self)
 class SecretPassage(Vanilla):
     cost = 4
     draw = 2
@@ -246,13 +249,23 @@ class Coppersmith(Action,Reaction):
     desc = "When you play a copper this turn, +£1"
     async def play(self,game:Dominion,player:DPlayer):
         player.reactions["play Copper"].append(self)
-    async def react(self,game:Dominion,player:DPlayer,event:str):
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
         player.coins+=1
-
-
+class Diplomat(Action,Reaction):
+    cost = 4
+    hand="attacked"
+    desc = "+2 Cards\nIf you have 5 or fewer cards in hand (after drawing), +2 Actions.\nWhen another player plays an Attack card, you may first reveal this from a hand of 5 or more cards, to draw 2 cards then discard 3."
+    async def play(self,game:Dominion,player:DPlayer):
+        if len(player.hand)<=3:
+            player.actions+=2
+        player.draw(2)
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
+        if await game.yn_option(player,True,f"You're being attacked by a {kwargs['card'].name}! React with Diplomat?"):
+            player.draw(2)
+            player.discard.dump(await game.choose_cards(player,player.hand,3,3,"Choose 3 cards to discard"))
 cards = [Courtyard,Lurker,Masquerade,ShantyTown,Steward,Swindler,WishingWell,Baron,
          Conspirator,Ironworks,MiningVillage,SecretPassage,Duke,Minion,Patrol,Replace,
-         Torturer,TradingPost,Upgrade,Harem,Nobles,Coppersmith]
+         Torturer,TradingPost,Upgrade,Harem,Nobles,Coppersmith,Diplomat]
 
 
 
