@@ -17,10 +17,15 @@ def substrings(s:str):
         yield " ".join(split[:n+1])
 @total_ordering
 class Cost(object):
-    def __init__(self,coins=0,potions=0,debt=0):
-        self.coins = coins
-        self.potions = potions
-        self.debt=debt
+    def __init__(self,coins:typing.Union[int,Cost]=0,potions=0,debt=0):
+        if isinstance(coins,Cost):
+            self.coins=coins.coins
+            self.potions=coins.potions
+            self.debt=coins.debt
+        else:
+            self.coins = coins
+            self.potions = potions
+            self.debt=debt
     def __str__(self):
         s=""
         if self.coins:
@@ -40,6 +45,11 @@ class Cost(object):
             return (self.coins,self.potions,self.debt)<(other.coins,other.potions,other.debt)
         else:
             return self>Cost(other)
+    def __add__(self, other):
+        if isinstance(other,Cost):
+            return Cost(self.coins+other.coins,self.potions+other.potions,self.debt+other.debt)
+        else:
+            return Cost(self.coins+other,self.potions,self.debt)
 class Card(object):
     cost = 0
     supply = True
@@ -51,13 +61,26 @@ class Card(object):
         pass
     def on_draw(self,player:DPlayer):
         pass
+    def get_cost(self,game:Dominion,player:DPlayer):
+        return self.cost
+    def buyable(self,game:Dominion,player:DPlayer):
+        return self.get_cost(game,player)<=player.coins+player.coffers-player.debt
+    async def on_buy(self,game:Dominion,player:DPlayer):
+        return False
     async def on_gain(self,game:Dominion,player:DPlayer):
         return False
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
+        pass
+    def should_discard(self):
+        return True
     @classmethod
     def get_supply(cls,players:int):
         return cls.total
     @classmethod
     def setup(cls,game:Dominion):
+        pass
+    @classmethod
+    def teardown(cls,game:Dominion):
         pass
     @property
     def name(self):
@@ -84,18 +107,30 @@ class CardPile(object):
         random.shuffle(self.contents)
     def take(self):
         return self.contents.pop(-1)
+    def draw_all(self,f:typing.Callable[[Card],bool]=lambda c:True):
+        taking = []
+        for c in self.contents[:]:
+            if f(c):
+                self.contents.remove(c)
+                taking.append(c)
+        return taking
     def view(self):
         return dib.smart_list([c.name for c in self.contents])
     def __bool__(self):
         return bool(self.contents)
     def __len__(self):
         return len(self.contents)
+    def __contains__(self, item):
+        return item in self.contents
     @property
     def empty(self):
         return not self.contents
     @property
     def top(self):
         return self.contents[-1]
+    @property
+    def bottom(self):
+        return self.contents[0]
 class SupplyPile(CardPile):
     def __init__(self,card:typing.Type[Card],players:int):
         self.card = card
@@ -105,6 +140,7 @@ class SupplyPile(CardPile):
     def text(self):
         return f"[{self.sname}: £{self.card.cost} ({len(self.contents)})]"
 class Treasure(Card):
+    auto_order = 0
     def __init__(self):
         super().__init__()
         self.extype = self.extype + ("TREASURE",)
@@ -142,37 +178,53 @@ class Victory(VP):
 class Defeat(VP):
     def __init__(self):
         super().__init__()
-        self.extype=self.extype+("DEFEAT",)
+        self.extype=("DEFEAT",)+self.extype
 class Action(Card):
     def __init__(self):
         super().__init__()
-        self.extype=self.extype+("ACTION",)
+        self.extype=("ACTION",)+self.extype
 class Night(Card):
     def __init__(self):
         super().__init__()
-        self.extype=self.extype+("NIGHT",)
+        self.extype=("NIGHT",)+self.extype
 class Reaction(Card):
     hand = ""
     def __init__(self):
         super().__init__()
-        self.extype=self.extype+("REACTION",)
-    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
+        self.extype=("REACTION",)+self.extype
+class Duration(Card):
+    trigger = "start"
+    discard_now = False
+    def __init__(self):
+        super().__init__()
+        self.extype = ("DURATION",) + self.extype
+    async def first(self,game:Dominion,player:DPlayer):
         pass
+    async def next(self,game:Dominion,player:DPlayer):
+        pass
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
+        await self.next(game,player)
+        self.discard_now=True
+    async def play(self,game:Dominion,player:DPlayer):
+        self.discard_now=False
+        player.reactions[self.trigger].append(self)
+        await self.first(game,player)
+    def should_discard(self):
+        return self.discard_now
 class Attack(Card):
     def __init__(self):
         super().__init__()
-        self.extype=self.extype+("ATTACK",)
+        self.extype=("ATTACK",)+self.extype
     async def play(self,game:Dominion,player:DPlayer):
         await self.bonus(game,player)
-        for delta in range(1,len(game.players)):
-            p=game.players[(game.players.index(player)+delta)%len(game.players)]
+        for p in game.attack_order(player):
             blocked=False
             await p.react(game, "attacked", card=self)
-            for c in p.hand:
+            for c in p.hand+p.active:
                 if isinstance(c,Defence):
-                    await c.on_block(game,player,p)
-                    await game.send(f"{p.name} blocked with {c.name}!")
-                    blocked=True
+                    if await c.on_block(game,player,p):
+                        await game.send(f"{p.name} blocked with {c.name}!")
+                        blocked=True
             if not blocked:
                 await self.attack(game, p, player)
     async def bonus(self,game:Dominion,player:DPlayer):
@@ -182,9 +234,9 @@ class Attack(Card):
 class Defence(Card):
     def __init__(self):
         super().__init__()
-        self.extype = self.extype + ("DEFENCE",)
+        self.extype = ("DEFENCE",)+ self.extype
     async def on_block(self,game:Dominion,attacker:DPlayer,targeted:DPlayer):
-        pass
+        return True
 class Curse(Defeat):
     def final_vp(self, game: Dominion, player: DPlayer):
         return -1
@@ -220,15 +272,17 @@ class DPlayer(dib.BasePlayer):
         self.deck = CardPile(True)
         self.discard = CardPile()
         self.reactions = collections.defaultdict(list)
+        self.handlock = asyncio.Lock()
     def update_hand(self,resend=False):
         new = ("Your hand: "+", ".join(c.name for c in self.hand)) if self.hand else "Your hand is empty!"
-        new+=f"\nActions: {self.actions}, Villagers: {self.villagers}, Buys: {self.buys}, Coins: {self.coins}, Coffers: {self.coffers}, Debt: {self.debt}"
-        if self.handmsg and not resend:
-            asyncio.create_task(self.handmsg.edit(content = new))
-        else:
-            asyncio.create_task(self.create_handmsg(new))
-    async def create_handmsg(self,new:str):
-        self.handmsg = await self.dm(new)
+        new+=f"\nActions: {self.actions}, Villagers: {self.villagers}, Buys: {self.buys}, Coins: {self.coins}, Coffers: {self.coffers}, Debt: {self.debt}, VP: {self.vp}"
+        asyncio.create_task(self.update_handmsg(new,resend))
+    async def update_handmsg(self,new:str,resend=False):
+        async with self.handlock:
+            if not self.handmsg or resend:
+                self.handmsg=await self.dm(new)
+            else:
+                await self.handmsg.edit(content=new)
     def xdraw(self,n=1)->typing.List[Card]:
         cards = []
         for x in range(n):
@@ -254,7 +308,10 @@ class DPlayer(dib.BasePlayer):
             c.on_draw(self)
     def redraw(self,update=True):
         self.discard.dump(self.hand)
-        self.discard.dump(self.active)
+        for a in self.active[:]:
+            if a.should_discard():
+                self.discard.add(a)
+                self.active.remove(a)
         for r,l in self.reactions.items():
             self.reactions[r]=[c for c in l if c in self.active]
         self.draw(5)
@@ -275,11 +332,11 @@ class DPlayer(dib.BasePlayer):
     @property
     def all_cards(self):
         return self.hand+self.discard.contents+self.deck.contents+self.active
-BASIC = [Curse,Estate,Duchy,Province,Copper,Silver,Gold]
-EXPANSIONS = ["vanilla","unhinged","intrigue","contests"]
+BASIC = [Curse,Estate,Duchy,Province,Copper,Silver,Gold,Platinum,Colony]
+EXPANSIONS = ["vanilla","unhinged","intrigue","contests","seaside","prosperity"]
 class Dominion(dib.BaseGame):
     name = "dominion"
-    min_players = 1
+    min_players = 2
     max_players = 6
     playerclass = DPlayer
     phase = "ACTION"
@@ -310,6 +367,7 @@ class Dominion(dib.BaseGame):
                     player.update_hand()
                 elif destination=="topdeck":
                     player.deck.add(card)
+                await player.react(self,f"gain {card.name}",card=card)
                 return card
         return False
     async def choose_cards(self,player:DPlayer,cards:typing.Union[typing.List[Card],CardPile],mn=0,mx=99,msg="",private=True):
@@ -321,8 +379,17 @@ class Dominion(dib.BaseGame):
             result = cards[:]
             cards.clear()
             return result
+        if mx<=0:
+            return []
         while True:
-            inp = await self.wait_for_text(player,msg,private,faked = ", ".join(c.name for c in random.sample(cards,random.randint(mn,mx))))
+            if player.fake:
+                taking = random.randint(mn,mx)
+                if taking==0:
+                    inp="pass"
+                else:
+                    inp= ", ".join(c.name for c in random.sample(cards,random.randint(mn,mx)))
+            else:
+                inp = await self.wait_for_text(player,msg,private)
             if inp.lower()=="pass" and mn==0:
                 return []
             cnames = [n.strip().lower() for n in inp.split(",")]
@@ -382,20 +449,21 @@ KINGDOM CARDS
         return s
     async def autoplay_treasures(self,player:DPlayer):
         await player.dm("Autoplaying Treasures...")
-        while True:
-            for c in player.hand:
-                if "TREASURE" in c.extype:
-                    await self.play_card(player,c)
-                    break
-            else:
-                break
+        while treasures:= [c for c in player.hand if isinstance(c,Treasure)]:
+            target = min(treasures,key=lambda c:c.auto_order)
+            await self.play_card(player,target)
     async def ai_action(self,player:DPlayer):
         if self.phase=="ACTION":
             await self.autoplay_treasures(player)
             money = player.coins+player.coffers-player.debt
-            if money>=8:
+            if Colony in self.supplies:
+                if money>=11:
+                    return "buy colony"
+                elif money>=9:
+                    return "buy platinum"
+            elif money>=8:
                 return "buy province"
-            elif money>=6:
+            if money>=6:
                 return "buy gold"
             elif money>=3:
                 return "buy silver"
@@ -407,11 +475,14 @@ KINGDOM CARDS
         for m in modifiers:
             if m in EXPANSIONS:
                 kingdoms.extend(importlib.import_module(f"dominion.{m}").cards)
-        for basic in BASIC:
+        for basic in BASIC[:7]:
             self.add_supply_pile(basic)
         random.shuffle(kingdoms)
         for kc in kingdoms[:10]:
             self.add_supply_pile(kc)
+        if sum(kc.cost for kc in kingdoms[:10])/10>4.5:
+            self.add_supply_pile(Platinum)
+            self.add_supply_pile(Colony)
         self.info={s().name.lower():s().full_desc for s in self.supplies}
         for p in self.players:
             for _ in range(7):
@@ -426,6 +497,7 @@ KINGDOM CARDS
                 if not p.fake:
                     await p.dm(self.view_supplies())
                     await self.send(f"{p.tag}, it's your turn!")
+                await p.react(self,"start")
                 self.phase = "ACTION"
                 while True:
                     if not p.fake:
@@ -450,16 +522,21 @@ KINGDOM CARDS
                             try:
                                 to_buy = i.split(maxsplit=1)[1]
                                 if buying:=self.parse_card(to_buy,[s.top for s in self.supplies.values() if s]):
-                                    if buying.cost<=p.coins+p.coffers:
+                                    if buying.buyable(self,p):
+                                        p.debt = 0
                                         p.coffers-=max(0,buying.cost-p.coins)
                                         p.coins-=min(buying.cost,p.coins)
                                         p.buys-=1
+                                        await p.react(self,f"buy {buying.name}",card=buying)
+                                        await buying.on_buy(self,p)
                                         await self.gain(p,buying.__class__)
                                         await p.dm(f"Buying successful!")
                                         await self.send(f"{p.name} bought a {buying.name}!")
                                         if not p.buys or any(isinstance(c,Night) for c in p.hand):
                                             await p.dm("No Buys or Nights left, automatically ending turn!")
                                             break
+                                        else:
+                                            p.update_hand()
                                     else:
                                         await p.dm("You don't have enough CASH MONEY to buy that!")
                                 else:
@@ -490,6 +567,8 @@ KINGDOM CARDS
                 p.redraw()
                 if self.game_over:
                     await self.send("The game is over!")
+                    for c in self.supplies.keys():
+                        c.teardown(self)
                     for vp in self.players:
                         vp.points = sum(c.final_vp(self,vp) for c in vp.all_cards if isinstance(c,VP))
                     await self.show_scoreboard(True)
@@ -499,5 +578,10 @@ KINGDOM CARDS
     def game_over(self):
         if not self.supplies[Province]:
             return True
+        elif Colony in self.supplies and not self.supplies[Colony]:
+            return True
         return len([s for s in self.supplies.values() if s.empty])>=(3 if len(self.players)<5 else 4)
+    def attack_order(self,attacker:DPlayer):
+        for delta in range(1,len(self.players)):
+            yield self.players[(self.players.index(attacker)+delta)%len(self.players)]
 

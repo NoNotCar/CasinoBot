@@ -115,4 +115,65 @@ class Alderman(Action):
     async def on_gain(self,game:Dominion,player:DPlayer):
         player.villagers+=3
         player.update_hand()
-cards = [Ransom,Backstreet,SecludedVillage,CursedTome,Architect,Farmer,Alderman]
+class SilverWorker(Action):
+    desc = "+3 Cards\nDiscard a card per Silver in you hand.\nWhen you gain this, each other player gains a Silver onto their deck."
+    cost = 3
+    async def play(self,game:Dominion,player:DPlayer):
+        player.draw(3)
+        silvers = len([c for c in player.hand if isinstance(c,Silver)])
+        player.discard.dump(await game.choose_cards(player,player.hand,silvers,silvers,f"Choose {silvers} cards to discard!"))
+    async def on_gain(self,game:Dominion,player:DPlayer):
+        for p in game.attack_order(player):
+            await game.gain(player,Silver,"deck")
+class Actor(Vanilla):
+    villagers = 1
+    draw = 1
+    cost = 1
+class MotherlyWitch(Action,Attack,Duration):
+    cost = 5
+    desc = "Each other player gains a Curse.\nNow and at the start of your next turn, +2 Cards.\nWhile this is in play, gain a Copper when another player plays an Attack card."
+    async def attack(self, game: Dominion, target: DPlayer, attacker:DPlayer):
+        await game.gain(target,Curse)
+    async def first(self,game:Dominion,player:DPlayer):
+        player.draw(2)
+    async def next(self,game:Dominion,player:DPlayer):
+        player.draw(2)
+    async def play(self,game:Dominion,player:DPlayer):
+        await Attack.play(self,game,player)
+        await Duration.play(self,game,player)
+        player.reactions["attacked"].append(self)
+    async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
+        if event=="attacked":
+            await game.gain(player,Copper)
+        else:
+            await Duration.react(self,game,player,event,**kwargs)
+class Midwife(Action,Night):
+    cost = 3
+    desc = "If it's your Night phase, +1 Villager.\nOtherwise, +2 Actions, +£1"
+    async def play(self,game:Dominion,player:DPlayer):
+        if game.phase=="NIGHT":
+            player.villagers+=1
+        else:
+            player.actions+=2
+            player.coins+=1
+        player.update_hand()
+class HillsideCity(Vanilla):
+    cost = 5
+    extra_desc = "If you have an even number of cards in your hand, +1 Card"
+    async def play(self,game:Dominion,player:DPlayer):
+        await super().play(game,player)
+        if not len(player.hand)%2:
+            player.draw(1)
+class KingsCounsel(Action):
+    cost = 3
+    desc = "The player to your left chooses an Action card from your hand. Play it thrice."
+    async def play(self,game:Dominion,player:DPlayer):
+        chooser = next(game.attack_order(player))
+        target = await game.choose_card(chooser, [c for c in player.hand if "ACTION" in c.extype], True,
+                                        msg=f"Choose a card for {player.name} to play thrice. Their hand: {', '.join(c.name for c in player.hand)}")
+        if target:
+            await game.play_card(player, target)
+            await game.play_card(player, target)
+            await game.play_card(player, target)
+cards = [Ransom,Backstreet,SecludedVillage,CursedTome,Architect,Farmer,Alderman,SilverWorker,Actor,MotherlyWitch,Midwife,
+         HillsideCity,KingsCounsel]

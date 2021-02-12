@@ -70,9 +70,9 @@ class Swindler(Action,Attack):
         trashing = target.xdraw(1)
         if trashing:
             trashing=trashing[0]
-            valid = [s.top for c, s in game.supplies.items() if s and c.cost==trashing.cost]
+            valid = [s.top for c, s in game.supplies.items() if s and c.get_cost(game,target)==trashing.get_cost(game,target)]
             if valid:
-                chosen = await game.choose_card(attacker, valid, msg=f"{target.name} trashed a {trashing.name}. Choose a card costing {trashing.cost} for them to gain!")
+                chosen = await game.choose_card(attacker, valid, msg=f"{target.name} trashed a {trashing.name}. Choose a card costing {trashing.get_cost(game,target)} for them to gain!")
                 await game.gain(target, chosen.__class__)
                 target.update_hand()
                 await game.send(f"{target.name} gained a {chosen.name}!")
@@ -152,7 +152,7 @@ class SecretPassage(Vanilla):
     async def play(self,game:Dominion,player:DPlayer):
         await super().play(game,player)
         if target:=await game.choose_card(player,player.hand,msg="Choose a card to insert."):
-            pos = await game.choose_number(player,True,0,len(player.deck),f"Choose a position (0=topdeck, {len(player.deck)}=bottomdeck")
+            pos = await game.choose_number(player,True,0,len(player.deck),f"Choose a position (0=bottomdeck, {len(player.deck)}=topdeck")
             player.deck.contents.insert(pos,target)
             player.update_hand()
 class Duke(Victory):
@@ -193,7 +193,7 @@ class Replace(Action,Attack):
         trashing = await game.choose_card(player, player.hand, msg="Choose a card to trash!")
         if trashing:
             await game.trash(player, trashing)
-            gained = await common.cost_limited_gain(game,player,trashing.cost+2)
+            gained = await common.cost_limited_gain(game,player,trashing.get_cost(game,player)+2)
             if isinstance(gained,Treasure) or isinstance(gained,Action):
                 player.deck.add(player.discard.take())
             elif isinstance(gained,Victory):
@@ -225,7 +225,8 @@ class Upgrade(Cantrip):
         trashing = await game.choose_card(player, player.hand, msg="Choose a card to trash!")
         if trashing:
             await game.trash(player, trashing)
-            await common.cost_limited_gain(game, player, trashing.cost + 1,lambda c: c.cost==trashing.cost+1)
+            target = trashing.get_cost(game,player) + 1
+            await common.cost_limited_gain(game, player, target,lambda c: c.get_cost(game,player)==target)
 
 class Harem(SimpleTreasure,Victory):
     income = 2

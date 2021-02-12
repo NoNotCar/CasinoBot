@@ -43,14 +43,18 @@ class Vassal(Action):
 class Vanilla(Action):
     draw = 0
     actions = 0
+    villagers = 0
     buys = 0
     money = 0
-    names = ["Card","Action","Buy"]
+    vp=0
+    names = ["Card","Action","Villager","Buy"]
     extra_desc = ""
     async def play(self,game:Dominion,player:DPlayer):
         player.actions+=self.actions
+        player.villagers+=self.villagers
         player.buys+=self.buys
         player.coins+=self.money
+        player.vp+=self.vp
         if self.draw:
             player.draw(self.draw)
         else:
@@ -58,7 +62,7 @@ class Vanilla(Action):
     @property
     def desc(self):
         d=""
-        for n,q in enumerate([self.draw,self.actions,self.buys]):
+        for n,q in enumerate([self.draw,self.actions,self.villagers,self.buys]):
             if q:
                 if d:
                     d+="\n"
@@ -67,6 +71,10 @@ class Vanilla(Action):
             if d:
                 d+="\n"
             d+=f"+£{self.money}"
+        if self.vp:
+            if d:
+                d+="\n"
+            d+=f"+{self.money}VP"
         if self.extra_desc:
             d+="\n"+self.extra_desc
         return d
@@ -108,10 +116,7 @@ class Militia(Action,Attack):
         player.coins+=2
         player.update_hand()
     async def attack(self, game: Dominion, target: DPlayer, attacker):
-        to_discard = max(0,target.hand-3)
-        if to_discard:
-            chosen = await game.choose_cards(target,target.hand,to_discard,to_discard,f"Choose {to_discard} cards to discard!")
-            target.discard.dump(chosen)
+        await common.handsize_attack(game,target,3)
 class Moneylender(Action):
     desc = "Trash a Copper from your hand. If you did, +£3"
     cost = 4
@@ -143,7 +148,7 @@ class Remodel(Action):
         trashing = await game.choose_card(player,player.hand,msg="Choose a card to trash!")
         if trashing:
             await game.trash(player,trashing)
-            await common.cost_limited_gain(game,player,trashing.cost+2)
+            await common.cost_limited_gain(game,player,trashing.get_cost(game,player)+2)
 class Smithy(Vanilla):
     cost = 4
     draw = 3
@@ -191,7 +196,7 @@ class Mine(Action):
         trashing = await game.choose_card(player,[c for c in player.hand if "TREASURE" in c.extype],msg="Choose a Treasure to trash!")
         if trashing:
             await game.trash(player,trashing)
-            await common.cost_limited_gain(game,player,trashing.cost+3,lambda c:isinstance(c,Treasure),"hand")
+            await common.cost_limited_gain(game,player,trashing.get_cost(game,player)+3,lambda c:isinstance(c,Treasure),"hand")
 class Witch(Action,Attack):
     cost = 5
     desc = "+2 Cards\nEach other player gains a Curse"
@@ -254,4 +259,3 @@ class Artisan(Action):
         player.deck.dump(await game.choose_cards(player,player.hand,1,1,"Choose a card to topdeck!"))
 cards = [Cellar,Chapel,Harbinger,Vassal,Village,Workshop,Bureaucrat,Gardens,Militia,Moneylender,Poacher,Remodel,Smithy,ThroneRoom,
          Festival,Market,Mine,Lab,CouncilRoom,Witch,Moat,Merchant,Bandit,Library,Artisan]
-print(len(cards))

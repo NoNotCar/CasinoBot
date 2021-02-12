@@ -236,8 +236,6 @@ class BaseGame(object):
         await chooser.dm("Thanks!")
         return None if n==1 and null else choices[n-1-null]
     async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False):
-        if len(options)==1:
-            return options[0]
         players=player if isinstance(player,list) else [player]
         if all(p.fake for p in players):
             return random.sample(options,1)[0]
