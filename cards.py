@@ -41,6 +41,8 @@ class Card(BaseCard):
         return ranks.index(self.rank)<ranks.index(other.rank) or ((self.rank==other.rank) and suits.index(self.suit)<suits.index(other.suit))
     def __repr__(self):
         return "Card: "+self.text
+    def copied(self):
+        return self.__class__()
     @property
     def text(self):
         return "%s of %s" % (self.rank,self.suit)
@@ -196,7 +198,7 @@ class Hearts(CardGame):
                     await self.send("Last round! Autoplayed: %s" % ", ".join(c.emoji for c in stack))
                     suit = stack[0].suit
                     turn -= 1
-                    turn %= len(self.players) - 1
+                    turn %= len(self.players)
                 else:
                     await self.channel.send("%s leads.%s" % (self.players[turn].tag,"" if self.hearts_broken else " %s are currently unbroken." % suits[2].capitalize()))
                     stack=[await self.wait_for_play(self.players[turn],lambda c: self.hearts_broken or all(c.suit==suits[2] for c in self.players[turn].hand) or c.suit!=suits[2],False)]
@@ -243,9 +245,9 @@ class OhHell(CardGame):
             bets={}
             dealer = self.players[-1]
             for p in self.players[:-1]:
-                bets[p]=await self.choose_number(p,False,0,r,"%s, bet how many tricks you will win." % p.name)
+                bets[p]=await self.choose_number(p,False,0,r,"%s, bet how many tricks you will win." % p.tag)
             while True:
-                bets[dealer] = await self.choose_number(dealer, False, 0, r, "%s, bet how many tricks you will win." % dealer.name)
+                bets[dealer] = await self.choose_number(dealer, False, 0, r, "%s, bet how many tricks you will win." % dealer.tag)
                 if sum(bets.values())!=r:
                     break
                 await self.send("The sum of bets cannot be equal to the total number of tricks, bet again!")
@@ -257,9 +259,9 @@ class OhHell(CardGame):
                     await self.send("Last round! Autoplayed: %s" % ", ".join(c.emoji for c in stack))
                     suit = stack[0].suit
                     turn-=1
-                    turn%=len(self.players)-1
+                    turn%=len(self.players)
                 else:
-                    await self.channel.send("%s leads." % self.players[turn].name)
+                    await self.channel.send("%s leads." % self.players[turn].tag)
                     stack=[await self.wait_for_play(self.players[turn])]
                     suit=stack[0].suit
                     for _ in range(len(self.players)-1):

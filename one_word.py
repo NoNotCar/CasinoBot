@@ -22,7 +22,7 @@ class OneWord(dib.BaseGame):
         return clue
     async def run(self,*modifiers):
         random.shuffle(self.players)
-        rounds=int(modifiers[0]) if modifiers else 10
+        rounds=int(modifiers[0]) if modifiers else max(10,len(self.players))
         points=0
         for n in range(rounds):
             guesser=self.players[n%len(self.players)]

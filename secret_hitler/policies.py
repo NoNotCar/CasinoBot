@@ -4,7 +4,8 @@ class Policy(object):
     name="Policy"
     memo=None
     async def enact(self,game):
-        pass
+        if self.track:
+            game.advance_track(self.track)
 class Liberal(Policy):
     track="liberal"
     name="Liberal"
@@ -51,4 +52,21 @@ class Smear(Policy):
         await game.channel.send("President %s, pick a player to smear" % game.current_president.name)
         target=await game.wait_for_tag(game.current_president,game.living_players)
         target.last_government=True
+class Compromise(Policy):
+    name="Compromise"
+    memo = "Advances all policy tracks."
+    async def enact(self,game):
+        for t in game.tracks:
+            game.advance_track(t)
+class Referendum(Policy):
+    name="Referendum"
+    memo = "Advances a random policy track."
+    async def enact(self,game):
+        game.advance_track(random.choice(list(game.tracks.keys())))
+class Genocide(Policy):
+    name = "Genocide"
+    memo = "Advances the Fascist track twice"
+    async def enact(self,game):
+        game.advance_track("fascist")
+        game.advance_track("fascist")
 

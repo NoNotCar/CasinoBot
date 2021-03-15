@@ -249,7 +249,7 @@ class Jukebox(commands.Cog):
                         added+=1
                     else:
                         skipped+=1
-            if shuff=="shuffle":
+            if shuff.lower() in ["shuffle","shuffled"]:
                 shuffle(qms)
             for q in qms:
                 await self.queue_music(ctx,q, vc, False)
@@ -297,7 +297,7 @@ class Jukebox(commands.Cog):
         song=self.queue[idx-1]
         self.queue.remove(song)
         self.resort()
-        await ctx.send("%s removed from queue!" % song.desc)
+        await ctx.send("%s removed from queue!" % song.name)
     @commands.command(name="clear",help="clear all your music (except for the currently playing one)")
     async def clear(self,ctx):
         cleared=0
@@ -322,7 +322,10 @@ class Jukebox(commands.Cog):
             return alias_cache[thing]
         return thing
     @commands.command(name="alias",help="create an alias for faster queueing")
-    async def alias(self,ctx,alias,url):
+    @commands.is_owner()
+    async def alias(self,ctx,alias:str,url:str):
+        if "/" in alias:
+            await ctx.send("Warning - alias contains /, check you got the arguments the right way round...")
         alias_cache[alias]=url
         await ctx.send("Alias creation successful!")
     def resort(self):

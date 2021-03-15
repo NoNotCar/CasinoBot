@@ -1,6 +1,7 @@
 from __future__ import annotations
 import discord
 from discord.ext import commands
+import economy
 from economy import get_user, register_1v1, register_ranked
 import asyncio
 import random
@@ -69,7 +70,7 @@ def assign_letters(players:typing.List[BasePlayer])->dict:
         assignment[p]=assigned
     return assignment
 
-async def gather(coros:typing.List[typing.Coroutine])->typing.List:
+async def gather(coros:typing.List[typing.Coroutine])->typing.Tuple:
     return await asyncio.gather(*coros)
 
 async def smart_gather(coros:typing.List[typing.Coroutine],keys:typing.List)->typing.Dict:
@@ -161,7 +162,7 @@ class BasePlayer(object):
         return await self.user.dm(msg)
     @property
     def name(self):
-        return self.user.nick
+        return self.user.name
     @property
     def du(self):
         return self.user.user
@@ -185,6 +186,9 @@ class BaseGame(object):
     queued=""
     no_pump=True
     has_ai = False
+    all_play=False
+    unstoppable=False
+    rewards = 10
     def __init__(self,ctx):
         self.players=[]
         self.channel=ctx.channel
@@ -203,7 +207,7 @@ class BaseGame(object):
                 return False
             else:
                 self.players.append(self.playerclass(user))
-                await self.send("%s has joined the game! Current players: %s" % (user.nick, len(self.players)))
+                await self.send("%s has joined the game! Current players: %s" % (user.name, len(self.players)))
                 return True
         else:
             self.players.append(author)
@@ -214,7 +218,7 @@ class BaseGame(object):
     async def wait_for_multitag(self,choosers:typing.Union[list,BasePlayer],choices:typing.List[BasePlayer],mn:int,mx:int):
         await self.pump()
         self.dunnit=None
-        if choosers is BasePlayer:
+        if isinstance(choosers,BasePlayer):
             choosers=[choosers]
         if all(c.fake for c in choosers):
             self.dunnit=random.choice(choosers)
@@ -326,6 +330,10 @@ class BaseGame(object):
             register_1v1(self.name,[w.user for w in winners],[l.user for l in losers],draw)
             if self.bot:
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
+            if self.rewards:
+                for w in winners:
+                    w.user.update_balance(self.rewards)
+                await self.send(f"The winners all get {self.rewards}c!")
         else:
             await self.send("No elo change - nobody or everybody won!")
         await self.pump()
@@ -336,6 +344,10 @@ class BaseGame(object):
             register_ranked(self.name,[[p.user for p in ps] for ps in porder])
             if self.bot:
                 await self.bot.get_cog("Economy").elo(self.channel,self.name)
+            if self.rewards:
+                for w in porder[0]:
+                    w.user.update_balance(self.rewards)
+                await self.send(f"The winners all get {self.rewards}c!")
         else:
             await self.send("No elo change - nobody or everybody won!")
         await self.pump()
@@ -345,7 +357,8 @@ class BaseGame(object):
             points[p.points].append(p)
         await self.end_ranked([points[p] for p in sorted(points.keys(),reverse=True)])
     async def show_scoreboard(self,final=False):
-        await self.send(("FINAL SCOREBOARD:\n" if final else "CURRENT SCOREBOARD:\n")+"\n".join("%s: %s" % (p.name,p.points) for p in self.players))
+        await self.send(("FINAL SCOREBOARD:\n" if final else "CURRENT SCOREBOARD:\n")+
+                        "\n".join("%s: %s" % (p.name,p.points) for p in sorted(self.players,key=lambda p:p.points,reverse=True)))
     async def send(self,msg:str="",**kwargs):
         if kwargs or self.no_pump:
             await self.pump()
@@ -358,8 +371,45 @@ class BaseGame(object):
                 self.queued+="\n"+msg
     async def pump(self):
         if self.queued:
-            await self.channel.send(self.queued)
+            q=self.queued
             self.queued=""
+            await self.channel.send(q)
+    async def run_pseudocommands(self,cmd,players=None):
+        total_args = len(cmd.__annotations__)
+        tchannel = self.channel
+        players = players or self.players
+        pdict = {p.du:p for p in players}
+        while True:
+            asyncio.create_task(self.pump())
+            message = await self.bot.wait_for("message",check=lambda m: m.channel == tchannel and m.author in pdict and m.content)
+            split = message.content.lower().split()
+            name = split.pop(0)
+            args = []
+            if name==cmd.__name__:
+                for n,t in enumerate(cmd.__annotations__.values()):
+                    if t==int:
+                        try:
+                            args.append(int(split.pop(0)))
+                        except ValueError:
+                            print("NOT AN INTEGER!")
+                            break
+                    elif t==str:
+                        if n==total_args-1:
+                            args.append(" ".join(split))
+                        else:
+                            args.append(split.pop(0))
+                    elif issubclass(t,BasePlayer):
+                        if n==0:
+                            args.append(pdict[message.author])
+                        else:
+                            break
+                            #TODO - more ruggedness
+                            #args.append(pdict[message.mentions[0]])
+                    else:
+                        await self.send(f"AAH I CAN'T DEAL WITH THIS {repr(t)}")
+                        break
+                else:
+                    asyncio.create_task(cmd(*args))
     @property
     def ashamed(self):
         return [p for p in self.players if p.busy]
@@ -395,6 +445,10 @@ class Games(commands.Cog):
             if game in self.game_classes:
                 g = self.game_classes[game](ctx)
                 self.games[ctx.channel] = g
+                if g.all_play:
+                    g.players = [g.playerclass(u) for u in economy.users.values() if not isinstance(u,economy.BankUser)]
+                    await self.begin(ctx)
+                    return g
                 if await g.join(ctx.author):
                     await g.pump()
                     return g
@@ -430,10 +484,13 @@ class Games(commands.Cog):
     async def stop(self,ctx):
         if ctx.channel in self.games:
             g = self.games[ctx.channel]
-            if g in self.running:
-                self.running[g].cancel()
-            del self.games[ctx.channel]
-            await ctx.send("The table was flipped and the %s game in this channel ended :cry:" % g.name)
+            if not g.unstoppable:
+                if g in self.running:
+                    self.running[g].cancel()
+                del self.games[ctx.channel]
+                await ctx.send("The table was flipped and the %s game in this channel ended :cry:" % g.name)
+            else:
+                await ctx.send(f"{get_user(ctx.author).name} attempted to flip the table, BUT IT'S WELDED TO THE FLOOR!")
         else:
             await ctx.send("no game in this channel...")
     @commands.command(name="challenge",help="challenge someone to a 2 player game in this channel")
@@ -508,16 +565,22 @@ class Games(commands.Cog):
     async def who(self,ctx):
         if ctx.channel in self.games:
             g = self.games[ctx.channel]
-            await ctx.send("Current players:\n"+"\n".join(p.name for p in g.players))
+            if g.all_play:
+                await ctx.send("Everyone is playing this game!")
+            else:
+                await ctx.send("Current players:\n"+"\n".join(p.name for p in g.players))
         else:
             await ctx.send("no game in this channel...")
     @commands.command(name="shame",help="shame those who are taking too long")
     async def shame(self,ctx):
+        user = get_user(ctx.author)
         if ctx.channel in self.games:
             g = self.games[ctx.channel]
             if g.shameable:
                 if shame:=g.ashamed:
-                    await ctx.send("%s, hurry the fuck up!" % smart_list([p.tag for p in shame]))
+                    msg = "%s, hurry the fuck up!" if user.has("f-word pass") else "%s, hurry up!"
+                    tagging = user.remove_item("name tag")
+                    await ctx.send(msg % smart_list([p.tag if tagging else p.name for p in shame]))
                 else:
                     await ctx.send("Shame on you, nobody is busy!")
             else:

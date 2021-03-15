@@ -44,12 +44,13 @@ class BoggleBoard(object):
 
 class BogglePlayer(dib.BasePlayer):
     MAX_DM_LENGTH = 10
+    words = None
     def __init__(self,user,fake=False):
         super().__init__(user,fake)
-        self.words = set()
     async def submission_phase(self,game:dib.BaseGame,board:BoggleBoard):
         trash = self.MAX_DM_LENGTH
         scoremsg = None
+        self.words = set()
         while True:
             if trash>=self.MAX_DM_LENGTH:
                 trash=0
@@ -77,20 +78,36 @@ class Boggle(dib.BaseGame):
     min_players = 1
     max_players = 20
     playerclass = BogglePlayer
+    rounds = 1
+    no_pump = False
     async def run(self,*modifiers):
-        board = BoggleBoard(V2(4,4))
-        await self.send("TWO MINUTES REMAIN!")
-        try:
-            await asyncio.wait_for(dib.gather([p.submission_phase(self,board) for p in self.players]),120)
-        except asyncio.TimeoutError:
+        if modifiers:
+            try:
+                self.rounds = max(1,int(modifiers[0]))
+            except ValueError:
+                pass
+        self.rewards=5*self.rounds
+        for r in range(self.rounds):
+            if self.rounds>1:
+                await self.send(f"ROUND {r+1}/{self.rounds}")
+            board = BoggleBoard(V2(4,4))
+            await self.send("TWO MINUTES REMAIN!")
+            await self.pump()
+            try:
+                await asyncio.wait_for(dib.gather([p.submission_phase(self,board) for p in self.players]),120)
+            except asyncio.TimeoutError:
+                for p in self.players:
+                    await p.dm("TIME'S UP FOLKS")
             for p in self.players:
-                await p.dm("TIME'S UP FOLKS")
-        for p in self.players:
-            valid_words = [w for w in p.words if not any(w in op.words for op in self.players if op!=p)]
-            score = sum(get_score(len(w)) for w in valid_words)
-            await self.send("%s got %s/%s unique words, and gets %s points!\n%s" % (p.name,len(valid_words),len(p.words),score,", ".join(valid_words)))
-            p.points=score
-        await self.send("The best word anyone could have gotten was %s!" % board.longest_possible().upper())
+                valid_words = [w for w in p.words if not any(w in op.words for op in self.players if op!=p)]
+                score = sum(get_score(len(w)) for w in valid_words)
+                await self.send("%s got %s/%s unique words, and gets %s points!\n%s" % (p.name,len(valid_words),len(p.words),score,", ".join(valid_words)))
+                p.points+=score
+            await self.send("The best word anyone could have gotten was %s!" % board.longest_possible().upper())
+            await self.show_scoreboard(r==self.rounds-1)
+            if r!=self.rounds-1:
+                await self.pump()
+                await asyncio.sleep(10)
         await self.end_points()
 
 

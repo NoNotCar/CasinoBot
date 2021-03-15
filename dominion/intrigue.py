@@ -70,7 +70,7 @@ class Swindler(Action,Attack):
         trashing = target.xdraw(1)
         if trashing:
             trashing=trashing[0]
-            valid = [s.top for c, s in game.supplies.items() if s and c.get_cost(game,target)==trashing.get_cost(game,target)]
+            valid = [s.top for c, s in game.supplies.items() if s and s.top.get_cost(game,target)==trashing.get_cost(game,target)]
             if valid:
                 chosen = await game.choose_card(attacker, valid, msg=f"{target.name} trashed a {trashing.name}. Choose a card costing {trashing.get_cost(game,target)} for them to gain!")
                 await game.gain(target, chosen.__class__)
@@ -190,10 +190,7 @@ class Replace(Action,Attack):
     cost = 5
     desc = "Trash a card from your hand. Gain a card costing up to $2 more than it. If the gained card is an Action or Treasure, put it onto your deck; if it's a Victory card, each other player gains a Curse."
     async def play(self,game:Dominion,player:DPlayer):
-        trashing = await game.choose_card(player, player.hand, msg="Choose a card to trash!")
-        if trashing:
-            await game.trash(player, trashing)
-            gained = await common.cost_limited_gain(game,player,trashing.get_cost(game,player)+2)
+        if gained:=await common.remodel(game,player,2):
             if isinstance(gained,Treasure) or isinstance(gained,Action):
                 player.deck.add(player.discard.take())
             elif isinstance(gained,Victory):
@@ -222,11 +219,7 @@ class Upgrade(Cantrip):
     extra_desc = "Trash a card from your hand. Gain a card costing exactly £1 more than it."
     async def play(self,game:Dominion,player:DPlayer):
         await super().play(game,player)
-        trashing = await game.choose_card(player, player.hand, msg="Choose a card to trash!")
-        if trashing:
-            await game.trash(player, trashing)
-            target = trashing.get_cost(game,player) + 1
-            await common.cost_limited_gain(game, player, target,lambda c: c.get_cost(game,player)==target)
+        await common.remodel(game,player,1,True)
 
 class Harem(SimpleTreasure,Victory):
     income = 2
@@ -261,7 +254,7 @@ class Diplomat(Action,Reaction):
             player.actions+=2
         player.draw(2)
     async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
-        if await game.yn_option(player,True,f"You're being attacked by a {kwargs['card'].name}! React with Diplomat?"):
+        if len(player.hand)>=5 and await game.yn_option(player,True,f"You're being attacked by a {kwargs['card'].name}! React with Diplomat?"):
             player.draw(2)
             player.discard.dump(await game.choose_cards(player,player.hand,3,3,"Choose 3 cards to discard"))
 cards = [Courtyard,Lurker,Masquerade,ShantyTown,Steward,Swindler,WishingWell,Baron,

@@ -24,7 +24,8 @@ memos={"anarchy":"Game modifier: adds the shutdown, terrorism and corruption neu
        "intrigue":"Game modifier: adds the smear, forecast and audit neutral policies to the deck",
        "split":"Game modifier: liberal team splits into liberals and conservatives, with each trying to pass 3 of their 4 policies. Liberals win if Hitler is killed.",
        "farmyard":"Game modifier: a sheep replaces a liberal and a goat replaces a fascist",
-       "suicide":"Game modifier: one of the fascists is replaced by a Tanner. There is also an extra execute event."}
+       "suicide":"Game modifier: one of the fascists is replaced by a Tanner. There is also an extra execute event.",
+       "choochoo":"Game modifier: adds the Compromise, Referendum and Genocide policies, all of which advance policy tracks in interesting ways."}
 for n,v in inspect.getmembers(roles):
     if inspect.isclass(v) and issubclass(v,roles.Liberal):
         memos[v.true_name.lower()]=v.help
@@ -83,6 +84,8 @@ class Game(dib.BaseGame):
             self.policy_deck.extend([policies.Corruption, policies.Shutdown, policies.Terrorism])
         if "intrigue" in modifiers:
             self.policy_deck.extend([policies.Audit, policies.Forecast, policies.Smear])
+        if "choochoo" in modifiers:
+            self.policy_deck.extend([policies.Compromise,policies.Referendum,policies.Genocide])
         if "farmyard" in modifiers:
             swap(self.roles, roles.Fascist, roles.Goat)
             swap(self.roles, roles.Liberal, roles.Sheep)
@@ -148,6 +151,12 @@ class Game(dib.BaseGame):
         if self.fails == 3:
             await self.channel.send("The populace are FRUSTRATED!")
             await self.enact("A frustrated populace", self.policy_deck.pop(), False)
+    def advance_track(self,track):
+        ct = self.tracks[track]
+        if not ct.done:
+            if ct.events[ct.progress]:
+                self.events.append(ct.events[ct.progress])
+            ct.progress += 1
     async def enact(self,enactor,policy,run_events=True):
         await self.channel.send("%s enacted a %s policy" % (enactor, policy.name.lower()))
         if len(self.policy_deck) < 3:
@@ -155,13 +164,8 @@ class Game(dib.BaseGame):
             self.discards = []
             random.shuffle(self.policy_deck)
             await self.channel.send("Deck fell below 3 cards, reshuffling...")
-        if policy.track:
-            ct = self.tracks[policy.track]
-            if ct.events[ct.progress]:
-                self.events.append(ct.events[ct.progress])
-            ct.progress += 1
+        await policy.enact(self)
         if run_events:
-            await policy.enact(self)
             while self.events and not self.done:
                 await self.events.pop().do(self)
         else:

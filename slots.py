@@ -81,9 +81,21 @@ class Star(SlotSymbol):
         player.update_balance(90)
         for u in economy.users.values():
             u.update_balance(10)
+class Infinity(SlotSymbol):
+    emoji = ":infinity:"
+    value = 10
+    async def on_triple(self,ctx,player):
+        await ctx.send("INFINITY: Your balance is set to 9999c")
+        player.update_balance(9999-player.credits)
+class Stonks(SlotSymbol):
+    emoji = ":office_worker:"
+    value = 5
+    async def on_triple(self,ctx,player):
+        await ctx.send("STONKS: Double your money!")
+        player.update_balance(player.credits)
 class Slots(commands.Cog):
-    wheel=[Heart,Cherry,Morgana,Lemon,Skull]*3+[Octopus]
-    high_stakes_wheel=[SuperHeart,Star,Star,Octopus,Skull,Skull]
+    wheel=[Heart,Cherry,Morgana,Lemon,Skull]*3+[Octopus,Stonks]
+    high_stakes_wheel=[SuperHeart,Star,Star,Octopus,Stonks,Infinity,Skull,Skull]
     using=False
     locked_out=None
     def __init__(self, bot):

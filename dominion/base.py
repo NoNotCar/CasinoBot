@@ -69,6 +69,8 @@ class Card(object):
         return False
     async def on_gain(self,game:Dominion,player:DPlayer):
         return False
+    async def on_trash(self, game: Dominion, player: DPlayer):
+        pass
     async def react(self,game:Dominion,player:DPlayer,event:str,**kwargs):
         pass
     def should_discard(self):
@@ -269,6 +271,7 @@ class DPlayer(dib.BasePlayer):
         super().__init__(p,f)
         self.hand = []
         self.active = []
+        self.exiled = []
         self.deck = CardPile(True)
         self.discard = CardPile()
         self.reactions = collections.defaultdict(list)
@@ -276,6 +279,7 @@ class DPlayer(dib.BasePlayer):
     def update_hand(self,resend=False):
         new = ("Your hand: "+", ".join(c.name for c in self.hand)) if self.hand else "Your hand is empty!"
         new+=f"\nActions: {self.actions}, Villagers: {self.villagers}, Buys: {self.buys}, Coins: {self.coins}, Coffers: {self.coffers}, Debt: {self.debt}, VP: {self.vp}"
+        new+=f"\nDECK: {len(self.deck)}, DISCARD: {len(self.discard)}"
         asyncio.create_task(self.update_handmsg(new,resend))
     async def update_handmsg(self,new:str,resend=False):
         async with self.handlock:
@@ -331,9 +335,9 @@ class DPlayer(dib.BasePlayer):
                     await c.react(game,self,e,**kwargs)
     @property
     def all_cards(self):
-        return self.hand+self.discard.contents+self.deck.contents+self.active
+        return self.hand+self.discard.contents+self.deck.contents+self.active+self.exiled
 BASIC = [Curse,Estate,Duchy,Province,Copper,Silver,Gold,Platinum,Colony]
-EXPANSIONS = ["vanilla","unhinged","intrigue","contests","seaside","prosperity"]
+EXPANSIONS = ["vanilla","unhinged","unbound","intrigue","contests","seaside","prosperity","cornucopia"]
 class Dominion(dib.BaseGame):
     name = "dominion"
     min_players = 2
@@ -352,7 +356,7 @@ class Dominion(dib.BaseGame):
         card.setup(self)
     def add_nonsupply_pile(self,card:typing.Type[Card]):
         self.nonsupplies[card] = SupplyPile(card, len(self.players))
-    async def gain(self,player:DPlayer,card:typing.Type[Card],destination = "discard",cloned=False):
+    async def gain(self,player:DPlayer,card:typing.Type[Card],destination = "discard",cloned=False,suppress_msg=False):
         if cloned:
             return player.discard.add(card())
         if supply:=(self.supplies.get(card,None) or self.nonsupplies.get(card,None)):
@@ -368,7 +372,18 @@ class Dominion(dib.BaseGame):
                 elif destination=="topdeck":
                     player.deck.add(card)
                 await player.react(self,f"gain {card.name}",card=card)
+                could_release = [e for e in player.exiled if isinstance(e,card.__class__)]
+                if could_release and await self.yn_option(player,True,f"Release {len(could_release)} cards from exile?"):
+                    for c in could_release:
+                        player.exiled.remove(c)
+                    player.discard.dump(could_release)
+                if not suppress_msg:
+                    await self.send(f"{player.name} gained a {card.name}!")
                 return card
+            elif not suppress_msg:
+                await self.send(f"{player.name} couldn't gain a {card().name}, since the pile's empty!")
+        if not suppress_msg:
+            await self.send(f"{player.name} couldn't gain a {card().name}, since it's not in the Supply!")
         return False
     async def choose_cards(self,player:DPlayer,cards:typing.Union[typing.List[Card],CardPile],mn=0,mx=99,msg="",private=True):
         if isinstance(cards,CardPile):
@@ -403,6 +418,8 @@ class Dominion(dib.BaseGame):
                     cards.extend(selected)
                     break
             else:
+                if cards is player.hand:
+                    player.update_hand()
                 return selected
     def parse_card(self,i:str,cards:typing.List[Card]):
         try:
@@ -414,11 +431,12 @@ class Dominion(dib.BaseGame):
         if result:
             return result[0]
         return None
-    async def play_card(self,player:DPlayer,card:Card):
-        if card in player.hand:
-            player.hand.remove(card)
-        if card not in player.active and card not in self.trashpile.contents:
-            player.active.append(card)
+    async def play_card(self,player:DPlayer,card:Card,already_removed=False):
+        if card in player.hand or already_removed:
+            if card in player.hand:
+                player.hand.remove(card)
+            if card not in player.active:
+                player.active.append(card)
         if self.phase=="ACTION":
             player.actions_played+=1
         await self.send(f"{player.name} played a {card.name}!")
@@ -429,9 +447,18 @@ class Dominion(dib.BaseGame):
         if isinstance(cards,Card):
             cards=[cards]
         for c in cards:
+            await c.on_trash(self,player)
             await player.react(self,f"trashed {c.name}",card=c)
         await self.send(f"{player.name} trashed a {dib.smart_list([c.name for c in cards])}!")
         self.trashpile.dump(cards)
+    async def exile(self,player:DPlayer,cards:typing.Union[Card,typing.List[Card]]):
+        if isinstance(cards,Card):
+            cards=[cards]
+        for c in cards:
+            await c.on_trash(self,player)
+            await player.react(self,f"exiled {c.name}",card=c)
+        await self.send(f"{player.name} exiled a {dib.smart_list([c.name for c in cards])}!")
+        player.exiled.extend(cards)
     async def discard(self,player:DPlayer,cards:typing.Union[Card,typing.List[Card]]):
         if isinstance(cards,Card):
             cards=[cards]
@@ -468,9 +495,27 @@ KINGDOM CARDS
             elif money>=3:
                 return "buy silver"
         return "pass"
+    async def payoff_debt(self,p:DPlayer,auto_coffers = False):
+        if p.debt:
+            coffers = 0
+            if p.coins<p.debt:
+                if auto_coffers:
+                    coffers=p.coffers
+                elif p.coffers:
+                    coffers = await self.choose_number(p, True, 0, min(p.coffers, p.debt - p.coins),
+                                                       "Choose how many coffers to use to pay off debt!")
+            old_debt = p.debt
+            p.debt -= min(p.debt,coffers + p.coins)
+            p.coffers -= coffers
+            p.coins -= min(old_debt, p.coins)
+            p.update_hand()
+        else:
+            await p.dm("You don't have any debt to pay off!")
     async def run(self,*modifiers):
         if not modifiers:
             modifiers=["vanilla"]
+        elif modifiers[0]=="all":
+            modifiers=EXPANSIONS
         kingdoms = []
         for m in modifiers:
             if m in EXPANSIONS:
@@ -510,8 +555,20 @@ KINGDOM CARDS
                     first = i.split()[0]
                     if first=="resend":
                         p.update_hand(True)
-                        continue
-                    if first=="buy":
+                    elif first=="autoplay":
+                        if self.phase=="NIGHT":
+                            await p.dm("Can't autoplay Treasures, it's nighttime!")
+                        else:
+                            await self.autoplay_treasures(p)
+                            self.phase = "TREASURE"
+                    elif first=="debt":
+                        if self.phase == "NIGHT":
+                            await p.dm("Can't pay off debt, it's nighttime!")
+                        else:
+                            await self.autoplay_treasures(p)
+                            self.phase = "TREASURE"
+                        await self.payoff_debt(p)
+                    elif first=="buy":
                         if self.phase=="ACTION":
                             await self.autoplay_treasures(p)
                             self.phase="TREASURE"
@@ -523,13 +580,14 @@ KINGDOM CARDS
                                 to_buy = i.split(maxsplit=1)[1]
                                 if buying:=self.parse_card(to_buy,[s.top for s in self.supplies.values() if s]):
                                     if buying.buyable(self,p):
+                                        total_cost = buying.cost+p.debt
                                         p.debt = 0
-                                        p.coffers-=max(0,buying.cost-p.coins)
-                                        p.coins-=min(buying.cost,p.coins)
+                                        p.coffers-=max(0,total_cost-p.coins)
+                                        p.coins-=min(total_cost,p.coins)
                                         p.buys-=1
                                         await p.react(self,f"buy {buying.name}",card=buying)
                                         await buying.on_buy(self,p)
-                                        await self.gain(p,buying.__class__)
+                                        await self.gain(p,buying.__class__,suppress_msg=True)
                                         await p.dm(f"Buying successful!")
                                         await self.send(f"{p.name} bought a {buying.name}!")
                                         if not p.buys or any(isinstance(c,Night) for c in p.hand):

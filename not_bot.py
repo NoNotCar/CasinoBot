@@ -32,6 +32,8 @@ from dominion import base
 import dib
 from bottoken import token
 import traceback
+import casino
+import shop
 bot=economy.bot
 @bot.event
 async def on_ready():
@@ -79,4 +81,5 @@ bot.add_cog(countdown.Countdown(bot))
 bot.add_cog(hangman.Hangman(bot))
 bot.add_cog(dib.Games(bot))
 bot.add_cog(jukebox.Jukebox(bot))
+bot.add_cog(shop.Shop(bot))
 bot.run(token)

@@ -2,11 +2,14 @@ import discord
 from discord.ext import commands
 import math
 import pickle
+from collections import Counter
 bot = commands.Bot(command_prefix='$')
 class User(object):
     credits=10
     dm_channel=None
     elos=None
+    flair = "%s"
+    _inv = None
     def __init__(self,uid,nick):
         self.id=uid
         self.nick=nick
@@ -44,7 +47,23 @@ class User(object):
         return self.user.dm_channel
     @property
     def name(self):
-        return self.nick
+        return self.flair%self.nick
+    @property
+    def inv(self)->Counter:
+        if self._inv is None:
+            self._inv=Counter()
+        return self._inv
+    def has(self,item:str):
+        return any(q>0 and i.name==item for i,q in self.inv.items())
+    def remove_item(self,item:str,q=1):
+        if not self.has(item):
+            return False
+        item = next(i for i,q in self.inv.items() if i.name==item)
+        if self.inv[item]>=q:
+            self.inv[item]-=q
+            save()
+            return True
+        return False
 class BankUser(User):
     credits = math.inf
     def update_balance(self,delta):
@@ -58,7 +77,7 @@ except IOError:
 def save():
     with open("users.pickle","wb") as f:
         pickle.dump(users,f)
-def get_user(user: discord.User)-> User:
+def get_user(user: discord.Member)-> User:
     try:
         return users[user.id]
     except KeyError:
@@ -82,10 +101,10 @@ def register_ranked(game,p_order):
         for m,p in enumerate(ps):
             p.set_elo(game,max(1,p.get_elo(game)+deltas[n][m]))
 class Economy(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self,bot):
         self.bot = bot
     @commands.command(name="balance", help="get your current balance, or view someone else's")
-    async def balance(self,ctx, *targets: discord.User):
+    async def balance(self,ctx, *targets: discord.Member):
         if not targets:
             targets = [ctx.author]
         s = ""
@@ -133,7 +152,7 @@ class Economy(commands.Cog):
         await ctx.send("Transaction Successful!")
     @commands.is_owner()
     @commands.command(name="reset", help="reset your balance, or someone else's")
-    async def reset(self, ctx, *targets: discord.User):
+    async def reset(self, ctx, *targets: discord.Member):
         if not targets:
             targets = [ctx.author]
         for t in targets:
@@ -169,13 +188,13 @@ class Economy(commands.Cog):
                 await ctx.send("You haven't played any elo games yet :cry:")
     @commands.is_owner()
     @commands.command(name="test_elo",help="Test the elo system")
-    async def test_elo(self,ctx,opponent:discord.User):
+    async def test_elo(self,ctx,opponent:discord.Member):
         p1=get_user(ctx.author)
         p2=get_user(opponent)
         register_1v1("test",[p1],[p2],False)
     @commands.is_owner()
     @commands.command(name="void_elo",help="Void a user's elo")
-    async def void_elo(self,ctx,target:discord.User):
+    async def void_elo(self,ctx,target:discord.Member):
         get_user(target).elos=None
         await ctx.send("%s's elo scores have been ERASED" % target.display_name)
     @commands.is_owner()
@@ -197,3 +216,9 @@ class Economy(commands.Cog):
         for u in users.values():
             u.nick=u.user.display_name
         await ctx.send("Nicknames reset!")
+    @commands.is_owner()
+    @commands.command(name="nukeinvs",help="reset everyone's inventories")
+    async def invreset(self,ctx):
+        for u in users.values():
+            u._inv=None
+        await ctx.send("Inventories reset!")

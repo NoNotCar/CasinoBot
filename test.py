@@ -32,7 +32,7 @@ class TestOneWord(unittest.IsolatedAsyncioTestCase):
 
 class TestShitler(unittest.IsolatedAsyncioTestCase):
     async def test_chaos(self):
-        await test_game(shitler.Game,10,"farmyard","suicide","anarchy","intrigue")
+        await test_game(shitler.Game,10,"farmyard","suicide","anarchy","intrigue","choochoo")
 class TestAllGames(unittest.IsolatedAsyncioTestCase):
     games=[
         #drawful.Drawful,

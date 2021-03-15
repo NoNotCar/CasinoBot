@@ -193,10 +193,7 @@ class Expand(Action):
     desc = "Trash a card. If you did, gain a card costing up to £3 more than it"
     cost = 7
     async def play(self,game:Dominion,player:DPlayer):
-        trashing = await game.choose_card(player,player.hand,msg="Choose a card to trash!")
-        if trashing:
-            await game.trash(player,trashing)
-            await common.cost_limited_gain(game,player,trashing.get_cost(game,player)+3)
+        await common.remodel(game, player, 3)
 class Forge(Action):
     desc = "Trash any number of cards from your hand. Gain a card with cost exactly equal to the total cost in coins of the trashed cards."
     cost = 7

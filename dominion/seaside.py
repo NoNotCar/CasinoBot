@@ -222,7 +222,14 @@ class Wharf(Action,Duration):
         player.draw(2)
     async def next(self,game:Dominion,player:DPlayer):
         await self.first(game,player)
-
+class Island(Action,Victory):
+    vp = 2
+    cost = 4
+    desc = "Exile this and a card from your hand.\n2VP"
+    async def play(self,game:Dominion,player:DPlayer):
+        if self in player.active:
+            await game.exile(player,self)
+        await game.exile(player,await game.choose_cards(player,player.hand,1,1,"Choose a card to exile!"))
 cards = [Haven, Lighthouse, NativeVillage,PearlDiver,Lookout,FishingVillage,Warehouse,Caravan,Salvager,SeaHag,
-         TreasureMap,Bazaar,Explorer,MerchantShip,Wharf,Tactician,Ambassador]
+         TreasureMap,Bazaar,Explorer,MerchantShip,Wharf,Tactician,Ambassador,Island]
 
