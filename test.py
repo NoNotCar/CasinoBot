@@ -1,6 +1,7 @@
 import unittest
 import one_word
 from secret_hitler import game as shitler
+from onenight import game as onenight
 from exploding_penguins import game as penguins
 import cards
 import dib
@@ -12,6 +13,7 @@ import drawful
 from avalon import avalon
 from mafia import mafia
 import forsale
+import cockroach
 
 class FakeContext(object):
     bot=None
@@ -47,7 +49,9 @@ class TestAllGames(unittest.IsolatedAsyncioTestCase):
         # turbostrations.Turbostrations,
         #decrypto.Decrypto
         #cards.GreatDalmuti,
-        forsale.ForSale
+        #forsale.ForSale,
+        onenight.OneNight,
+        cockroach.CockroachPoker
         ]
     async def test_min_players(self):
         for g in self.games:

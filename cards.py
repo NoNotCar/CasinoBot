@@ -122,6 +122,8 @@ class CardGame(dib.BaseGame):
     async def run(self,*modifiers):
         self.playing=True
     def deal(self,n=-1):
+        if n>len(self.deck)//len(self.players):
+            n=-1
         if n==-1:
             n=len(self.deck)//len(self.players)
             deck=self.deck[len(self.deck)-n*len(self.players):]
@@ -135,14 +137,17 @@ class CardGame(dib.BaseGame):
         random.shuffle(deck)
         for i,p in enumerate(self.players):
             p.set_hand(deck[i::len(self.players)])
-    async def wait_for_play(self,player:Player,f_valid=lambda c:True,prompt=True):
-        card = await self.smart_options(player,False,[c for c in player.hand if f_valid(c)],lambda c:(c.text,c.short),("%s's turn:" % player.name if prompt else ""),True)
+    async def wait_for_play(self,player:Player,f_valid=lambda c:True,prompt=True,private=False):
+        card = await self.smart_options(player,private,[c for c in player.hand if f_valid(c)],lambda c:(c.text,c.short),("%s's turn:" % player.name if prompt else ""),True)
         player.remove_card(card)
         return card
     async def wait_for_multiplay(self,player:Player,message="Play some cards",min_cards = 1,max_cards = 1,f_valid=lambda c: True,private=False):
         send = player.dm if private else self.send
         while True:
-            text = await self.wait_for_text(player,message,private,faked=", ".join(c.short for c in random.sample(player.hand,min_cards)))
+            if player.hand:
+                text = await self.wait_for_text(player,message,private,faked=", ".join(c.short for c in random.sample(player.hand,min(len(player.hand),max_cards))))
+            else:
+                text = await self.wait_for_text(player,message,private,faked="pass")
             if text.lower()=="pass" and min_cards==0:
                 return []
             hand=[]
@@ -159,6 +164,9 @@ class CardGame(dib.BaseGame):
             else:
                 if min_cards<=len(hand)<=max_cards:
                     if player.could_play(hand):
+                        for h in hand:
+                            player.hand.remove(h)
+                        await player.update()
                         return hand
                     else:
                         await send("You don't have that many copies!")
@@ -188,7 +196,6 @@ class Hearts(CardGame):
                 passed = await dib.gather([self.wait_for_multiplay(p,"Choose 3 cards to give to an opponent!",3,3) for p in self.players])
                 for i,p in enumerate(self.players):
                     for c in passed[i]:
-                        p.hand.remove(c)
                         self.players[(i+passing)%len(self.players)].hand.append(c)
                 for p in self.players:
                     await p.update()

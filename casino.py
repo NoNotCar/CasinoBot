@@ -37,7 +37,7 @@ class Roulette(dib.BaseGame):
             await self.send("Not a valid bet...")
     async def run(self,*modifiers):
         await self.send("The ball is rolling! PLACE YOUR BETS!")
-        bet_manager = asyncio.create_task(self.run_pseudocommands(self.bet))
+        bet_manager = asyncio.create_task(self.run_pseudocommand(self.bet))
         await asyncio.sleep(random.randint(self.MIN_TIME,self.MAX_TIME))
         bet_manager.cancel()
         self.bets_closed=True

@@ -114,7 +114,7 @@ class Game(dib.BaseGame):
                 player.hand.remove(c)
                 await c.execute(self, card)
             else:
-                await card.execute(self)
+                await card.execute(self, 0)
         else:
             await player.dm("You drew %s" % card.name)
             player.hand.append(card)

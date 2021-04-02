@@ -120,7 +120,7 @@ class FakeUser(object):
         pass
     @property
     def name(self):
-        return str(self.uid)
+        return self.nick
     @property
     def nick(self):
         return fake_names[self.uid%len(fake_names)]
@@ -220,7 +220,8 @@ class BaseGame(object):
         self.dunnit=None
         if isinstance(choosers,BasePlayer):
             choosers=[choosers]
-        if all(c.fake for c in choosers):
+        if all(c.fake for c in choosers) or all(c.fake for c in choices):
+            print("OOK")
             self.dunnit=random.choice(choosers)
             return random.sample(choices,mn)
         for c in choosers:
@@ -364,17 +365,32 @@ class BaseGame(object):
             await self.pump()
             await self.channel.send(msg,**kwargs)
         else:
-            if len(self.queued+"\n"+msg)>2000:
-                self.pump()
+            if len(self.queued+"\n"+msg)>1900:
+                await self.pump()
                 self.queued=msg
             else:
                 self.queued+="\n"+msg
+    async def long_send(self,msgs:typing.List[str]):
+        total_length = 0
+        q = ""
+        for msg in msgs:
+            total_length+=len(msg)
+            if total_length<1900:
+                if q:
+                    q+="\n"
+                q+=msg
+            else:
+                await self.send(q)
+                total_length=len(msg)
+                q=msg
+        if q:
+            await self.send(q)
     async def pump(self):
         if self.queued:
             q=self.queued
             self.queued=""
             await self.channel.send(q)
-    async def run_pseudocommands(self,cmd,players=None):
+    async def run_pseudocommand(self, cmd, players=None):
         total_args = len(cmd.__annotations__)
         tchannel = self.channel
         players = players or self.players
@@ -387,27 +403,27 @@ class BaseGame(object):
             args = []
             if name==cmd.__name__:
                 for n,t in enumerate(cmd.__annotations__.values()):
-                    if t==int:
+                    if t==int or t=="int":
                         try:
                             args.append(int(split.pop(0)))
                         except ValueError:
                             print("NOT AN INTEGER!")
                             break
-                    elif t==str:
+                    elif t==str or t=="str":
                         if n==total_args-1:
                             args.append(" ".join(split))
                         else:
                             args.append(split.pop(0))
-                    elif issubclass(t,BasePlayer):
+                    else:
                         if n==0:
                             args.append(pdict[message.author])
                         else:
                             break
                             #TODO - more ruggedness
                             #args.append(pdict[message.mentions[0]])
-                    else:
-                        await self.send(f"AAH I CAN'T DEAL WITH THIS {repr(t)}")
-                        break
+                    # else:
+                    #     await self.send(f"AAH I CAN'T DEAL WITH THIS {repr(t)}")
+                    #     break
                 else:
                     asyncio.create_task(cmd(*args))
     @property
