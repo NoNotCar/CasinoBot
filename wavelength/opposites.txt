@@ -1,0 +1,70 @@
+cold-hot
+casual-smart
+wet-dry
+dead-alive
+light-heavy
+deserted-busy
+disgusting-tasty
+ugly-pretty
+vegetable-fruit
+rude-polite
+amateur-professional
+ill-healthy
+kinky-vanilla
+cubic-spherical
+triangular-square
+low-high
+quiet-loud
+mild-spicy
+sad-happy
+different-identical
+uncool-cool
+random-deterministic
+easy-tricky
+simple-complex
+red-blue
+yellow-green
+opaque-transparent
+soft-hard
+penne-spaghetti
+safe-risky
+cat-dog
+unpopular-popular
+introverted-extroverted
+left wing-right wing
+liberal-authoritarian
+tropical-polar
+bacteria-elephant
+calm-choppy
+sunny-hurricane
+ordinary-special
+uniform-varied
+straight-gay
+strikeout-home run
+stone club-ICBM
+rowboat-ocean liner
+oxford-cambridge
+CUCA-dipsoc
+nerd-jock
+least threatened-extinct
+wood-diamond
+cheap-expensive
+forgettable-memorable
+calm-angry
+niche-popular
+aldi-waitrose
+solid-gaseous
+extinguished-inferno
+dim-bright
+fresh-stinky
+famous-infamous
+model citizen-hardened criminal
+british-american
+drab-vivid
+cis-trans
+dirty-clean
+sticky-lubricated
+tuneful-discordant
+ios-android
+unsexy-sexy
+dull-exciting

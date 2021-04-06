@@ -33,6 +33,8 @@ from onenight import game
 from dominion import base
 from snakeoil import snakeoil
 import cockroach
+from wavelength import wavelength
+import insider
 import dib
 from bottoken import token
 import traceback
