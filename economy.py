@@ -10,6 +10,7 @@ class User(object):
     elos=None
     flair = "%s"
     _inv = None
+    ldelta = 0
     def __init__(self,uid,nick):
         self.id=uid
         self.nick=nick
@@ -31,14 +32,18 @@ class User(object):
     def set_elo(self,game,rating):
         last_rating = self.get_elo(game)
         if 100 > last_rating > rating:
+            self.ldelta=0
             return
         elif last_rating>100>rating:
+            self.ldelta=rating-100
             rating=100
+        else:
+            self.ldelta=rating-last_rating
         self.elos[game]=rating
         save()
-    async def dm(self,msg):
+    async def dm(self,msg,**kwargs):
         await self.user.create_dm()
-        return await self.user.dm_channel.send(msg)
+        return await self.user.dm_channel.send(msg,**kwargs)
     @property
     def user(self):
         return bot.get_user(self.id)
@@ -169,21 +174,28 @@ class Economy(commands.Cog):
         else:
             get_user(ctx.author).nick=ctx.author.display_name
         await ctx.send("Name set to %s" % get_user(ctx.author).name)
-    def format_elo(self,r:float):
-        return int(round(r))
+    def format_elo(self,u:User,e:int):
+        ldelta = u.ldelta
+        u.ldelta=0
+        if ldelta >0:
+            return f"{int(round(e))} (+{int(round(ldelta))})"
+        elif ldelta <0:
+            return f"{int(round(e))} ({int(round(ldelta))})"
+        return int(round(e))
     @commands.command(help="get your current elo scores, or the elo for a specific game")
     async def elo(self,ctx,game=""):
         if game:
             scores=[[u,u.get_elo(game)] for u in users.values() if u.elos]
             scores.sort(key=lambda t: t[1],reverse=True)
             if scores:
-                await ctx.send("\n".join(["LEADERBOARD FOR %s" % game.upper()]+["%s: %s" % (u.name,self.format_elo(e)) for u,e in scores if e]))
+                await ctx.send("\n".join(["LEADERBOARD FOR %s" % game.upper()]+["%s: %s" % (u.name,self.format_elo(u,e)) for u,e in scores if e]))
             else:
                 await ctx.send("No scores for this game yet :cry:")
         else:
             user=get_user(ctx.author)
             if user.elos:
-                await ctx.send("\n".join(["YOUR SCORES"] + ["%s: %s" % (g, self.format_elo(e)) for g, e in user.elos.items() if e]))
+                user.ldelta=0
+                await ctx.send("\n".join(["YOUR SCORES"] + ["%s: %s" % (g, self.format_elo(user,e)) for g, e in user.elos.items() if e]))
             else:
                 await ctx.send("You haven't played any elo games yet :cry:")
     @commands.is_owner()

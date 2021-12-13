@@ -123,6 +123,7 @@ class Jukebox(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.queue=[]
+        self.skip_banned=set()
     def offical_search(self,query, results=10, max_duration=600):
         response = requests.get(
             "https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=%s&q=%s&type=video&key=%s" % (
@@ -286,8 +287,21 @@ class Jukebox(commands.Cog):
             self.vc.stop()
         else:
             await ctx.send("No music to stop!")
+    @commands.is_owner()
+    @commands.command(name="skipban",help="stop CERTAIN PEOPLE from skipping other people's music")
+    async def skipban(self,ctx,user:discord.Member):
+        if user in self.skip_banned:
+            await ctx.send(f"{user.nick} has been un-skipbanned.")
+            self.skip_banned.remove(user)
+        else:
+            await ctx.send(f"{user.nick} has been skipbanned!")
+            self.skip_banned.add(user)
     @commands.command(name="skip",help="skip the current song")
     async def skip(self,ctx,idx:int=1):
+        target = self.queue[idx-1]
+        if target.queuer!=ctx.author and ctx.author in self.skip_banned:
+            await ctx.send("Sorry, you've been skipbanned. Take a moment to reflect on your wrongdoings...")
+            return
         if idx==1 and self.vc:
             self.vc.stop()
             return
@@ -322,11 +336,11 @@ class Jukebox(commands.Cog):
             return alias_cache[thing]
         return thing
     @commands.command(name="alias",help="create an alias for faster queueing")
-    @commands.is_owner()
     async def alias(self,ctx,alias:str,url:str):
         if "/" in alias:
             await ctx.send("Warning - alias contains /, check you got the arguments the right way round...")
-        alias_cache[alias]=url
+        if ctx.author==ctx.guild.owner or alias not in alias_cache:
+            alias_cache[alias]=url
         await ctx.send("Alias creation successful!")
     def resort(self):
         if self.queue and len(self.queue)>1:

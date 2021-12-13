@@ -13,7 +13,7 @@ class DrawfulRound(object):
     def get_others(self,ps):
         return [p for p in ps if p not in [self.prompter,self.drawer]]
     async def submit_phase(self,game):
-        self.prompt=await game.wait_for_text(self.prompter,"Submit your prompt:", confirmation="% has submitted their prompt!")
+        self.prompt=await game.wait_for_text(self.prompter,"Submit your prompt:", confirmation="%s has submitted their prompt!")
         await self.prompter.dm("Thanks!")
     async def draw_phase(self,game):
         self.pic=await game.wait_for_picture(self.drawer,"Draw this: %s" % self.prompt)

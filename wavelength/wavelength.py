@@ -1,5 +1,6 @@
 import dib
 import random
+import word_list
 
 resolution = 20
 opposites=[]
@@ -14,6 +15,9 @@ class Wavelength(dib.BaseGame):
     teams = [":gem:",":ribbon:"]
     name="wavelength"
     async def run(self,*modifiers):
+        anarchy = "anarchy" in modifiers
+        if anarchy:
+            await self.send(":warning: ANARCHY MODE ACTIVE :warning:")
         random.shuffle(self.players)
         team1 = self.players[::2]
         team2 = self.players[1::2]
@@ -24,7 +28,11 @@ class Wavelength(dib.BaseGame):
         opps = opposites.copy()
         random.shuffle(opps)
         while all(p<10 for p in points):
-            opp = opps.pop()
+            if anarchy:
+                pair = random.sample(word_list.common,2)
+                opp=f"{pair[0]}-{pair[1]}"
+            else:
+                opp = opps.pop()
             team = team2 if tt else team1
             other_team = team1 if tt else team2
             cluegiver = team[turn%len(team)]
@@ -43,6 +51,7 @@ class Wavelength(dib.BaseGame):
                     points[1-tt]+=1
                 winnings = max(0,4-abs(amount-guess))
                 await self.send(f"The true answer was {amount}, so team {self.teams[tt]} get {winnings} points.")
+                points[tt]+=winnings
             if tt:
                 turn += 1
             tt=1-tt

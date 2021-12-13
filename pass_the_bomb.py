@@ -7,7 +7,7 @@ from asyncio import create_task,wait_for,exceptions
 rtypes=["prefix","suffix","middle"]
 lwords=list(words)
 representive_words=random.sample(lwords,len(lwords)//10)
-bounds={"easy":(100,1000),"medium":(10,100),"hard":(1,10)}
+bounds={"easy":(100,1000),"medium":(10,100),"hard":(2,10)}
 #fragments={"er","gh","th","sh","de","ed","re","op","py","un","st","ch","po","go","to","so","is","ir","z","v","y","ve","il","oo","ea","ee","in","can","wed","res","x","are","ira","pat","ty","ae","ma","ta","sa"}
 def valid(word,rtype,frag):
     l=len(frag)

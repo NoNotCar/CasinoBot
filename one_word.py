@@ -16,6 +16,7 @@ class OneWord(dib.BaseGame):
     min_players = 3
     max_players = 20
     name = "oneword"
+    CORRECT_BONUS = 50
     async def wait_for_clue(self,player,target):
         clue = await self.choose_option(player, True, words, "Word to guess: %s\nSubmit your clue!" % target, True)
         await self.channel.send("%s has submitted their clue!" % player.name)
@@ -39,11 +40,16 @@ class OneWord(dib.BaseGame):
             if actual_clues:
                 guess=await self.choose_option(guesser,False,words,"Guessing time! Clues: "+", ".join(actual_clues),True)
                 if too_similar(guess,word):
-                    await self.channel.send("CORRECT! WELL DONE!")
+                    await self.channel.send("CORRECT! WELL DONE! You get %sc!" % self.CORRECT_BONUS)
+                    guesser.user.update_balance(self.CORRECT_BONUS)
                     points+=1
                 else:
                     await self.channel.send("Sorry, the word was actually "+word)
             else:
                 await self.channel.send("Sorry, all words collided or were too similar...")
         await self.channel.send("Game over! Your score: %s/%s" % (points,rounds))
+        money = 5*(points**2)
+        await self.channel.send("All players get %sc!" % money)
+        for p in self.players:
+            p.user.update_balance(money)
         self.done=True

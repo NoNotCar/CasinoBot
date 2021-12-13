@@ -92,7 +92,7 @@ class Board(object):
                             if letter in placed:
                                 wmult=max(wmult,1)
                                 wmult*=self.squares[tpos].word_multiplier
-                            wscore+=letter.score*self.squares[tpos].letter_multiplier
+                            wscore+=letter.score*(self.squares[tpos].letter_multiplier if letter in placed else 1)
                             word+=letter.letter
                         else:
                             break

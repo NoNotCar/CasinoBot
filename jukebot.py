@@ -8,10 +8,6 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     await bot.change_presence(activity=discord.Game(name="totally rad music"))
 @bot.event
-async def on_message(message):
-    ctx = await bot.get_context(message)
-    await bot.invoke(ctx)
-@bot.event
 async def on_command_error(ctx:commands.Context,error:commands.CommandError):
     if isinstance(error,commands.BadArgument):
         await ctx.send("BAD ARGUMENT: Use $help [command] for help!")

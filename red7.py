@@ -16,7 +16,7 @@ class Card7(cards.BaseCard):
     def __eq__(self, other):
         return isinstance(other,Card7) and (self.colour,self.rank)==(other.colour,other.rank)
     def __lt__(self, other:Card7):
-        return self.rank<other.rank or ((self.rank==other.rank) and self.colour<other.colour)
+        return self.rank<other.rank or ((self.rank==other.rank) and self.colour>other.colour)
     def __repr__(self):
         return "Card: "+self.text
     def __hash__(self):

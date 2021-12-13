@@ -16,13 +16,14 @@ from secret_hitler import game as shitler
 import penultima
 from among_us import game
 import drawful
-import codenames
+from codenames import codenames
 from scrabble import scrabble
 import witswagers
 import decrypto
 import quiplash
 from avalon import avalon
 from mafia import mafia
+from dixit import dixit
 import haiclue
 import no_thanks
 import boggle
@@ -68,6 +69,30 @@ async def on_command_error(ctx:commands.Context,error:commands.CommandError):
 @bot.command(name="roll",help="roll a dice")
 async def roll(ctx,sides:int):
     await ctx.send("You rolled a %s!" % (sides+1))
+# @bot.command(name="jenn",help="idk")
+# async def jenn(ctx):
+#     name = ctx.author.nick
+#     await ctx.send(f"""Shall {name} compare jenn to a summer’s day?
+# Jenn art more lovely and more temperate:
+# Rough winds do shake the darling buds of May,
+# And summer’s lease hath all too short a date;
+# Sometime too hot the eye of heaven shines,
+# And often is his gold complexion dimm'd;
+# And every fair from fair sometime declines,
+# By chance or nature’s changing course untrimm'd;
+# But jenn's eternal summer shall not fade,
+# Nor lose possession of that fair jenn ow’st;
+# Nor shall death brag jenn wander’st in his shade,
+# When in eternal lines to time jenn grow’st:
+#    So long as men can breathe or eyes can see,
+#    So long lives this, and this gives life to jenn.""")
+@bot.command(name="daniel",help="gently persuade Daniel to return to us")
+async def daniel(ctx):
+    await ctx.send("""@panDANIELlo:rainbow: whence shall we hear your joyful voice again
+as the flowers sweetly bloom in the meadow
+and children frolic to and fro
+lest we forget that gay summer's day
+perched on a porcelain throne""")
 @bot.command(name="mute",help="server mute yourself")
 @commands.has_permissions(administrator=True)
 async def mute(ctx):

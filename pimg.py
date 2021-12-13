@@ -4,7 +4,12 @@ import pathlib
 import typing
 from PIL import Image, ImageFont, ImageDraw
 import vector
+from asyncio import Lock
+import discord
+from dib import BasePlayer
 
+bebas = ImageFont.truetype("fonts/bebas.ttf",16)
+templock = Lock()
 class PImg(object):
     def __init__(self, img:Image.Image):
         self.img=img
@@ -12,8 +17,21 @@ class PImg(object):
         return PImg(self.img.resize((self.w*n,self.h*n),Image.NEAREST))
     def blit(self,other:PImg,pos:vector.V2):
         self.img.paste(other.img, (pos.x, pos.y, pos.x + other.w, pos.y + other.h), other.img)
+    def write(self,text:str,font:ImageFont.ImageFont,pos:vector.V2,anchor="mm",colour=(0,0,0)):
+        d=ImageDraw.Draw(self.img)
+        d.text(pos,text,font=font,anchor=anchor,fill=colour)
     def copy(self):
         return PImg(self.img.copy())
+    def save(self,filename):
+        self.img.save(filename)
+    async def send(self,channel:discord.TextChannel):
+        async with templock:
+            self.save("temp.png")
+            await channel.send(file=discord.File("temp.png"))
+    async def dm_send(self,player:BasePlayer,msg=""):
+        async with templock:
+            self.save("temp.png")
+            await player.dm(msg,file=discord.File("temp.png"))
     @classmethod
     def filled(cls,sz:vector.V2,color:tuple)->PImg:
         return PImg(Image.new("RGBA",sz.tuple,color))

@@ -36,7 +36,8 @@ class bidict(dict):
 def smart_number(things: list, name: str, plural=None) -> str:
     return "%s %s" % (len(things), name if len(things) == 1 else plural or name + "s")
 
-def smart_list(things: list) -> str:
+def smart_list(things: typing.Union[typing.List[str],typing.Generator[str]]) -> str:
+    things=list(things)
     if len(things) > 2:
         return "%s and %s" % (", ".join(things[:-1]), things[-1])
     elif len(things) == 2:
@@ -133,7 +134,7 @@ class FakeUser(object):
 class AIUser(object):
     def update_balance(self,delta):
         return True
-    async def dm(self,msg):
+    async def dm(self,msg,**kwargs):
         pass
     def get_elo(self,game):
         return 100
@@ -158,8 +159,8 @@ class BasePlayer(object):
         self.user=AIUser() if fake=="ai" else FakeUser() if fake else user
         self.fake=fake
         self.hand=[]
-    async def dm(self,msg):
-        return await self.user.dm(msg)
+    async def dm(self,msg,**kwargs):
+        return await self.user.dm(msg,**kwargs)
     @property
     def name(self):
         return self.user.name
@@ -232,7 +233,12 @@ class BaseGame(object):
             if c.du==m.author:
                 self.dunnit=c
         return [c for c in choices if c.du in m.mentions]
-    async def dm_tag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],null=False):
+    async def numbered_options(self,chooser:BasePlayer,choices:typing.List[str])->str:
+        await chooser.dm("\n".join("%s: %s" % (n + 1, c) for n, c in enumerate(choices)))
+        n = await self.choose_number(chooser, True, 1, len(choices))
+        await chooser.dm("Thanks!")
+        return choices[n-1]
+    async def dm_tag(self,chooser:BasePlayer,choices:typing.List[BasePlayer],null=False)->BasePlayer:
         if null:
             await chooser.dm("1: Nobody\n"+"\n".join("%s: %s" % (n+2,c.name) for n,c in enumerate(choices)))
         else:
@@ -240,7 +246,7 @@ class BaseGame(object):
         n=await self.choose_number(chooser,True,1,len(choices)+null)
         await chooser.dm("Thanks!")
         return None if n==1 and null else choices[n-1-null]
-    async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False):
+    async def choose_option(self, player, private, options,msg="Choose an option: ",secret=False)->str:
         players=player if isinstance(player,list) else [player]
         if all(p.fake for p in players):
             return random.sample(options,1)[0]
@@ -390,7 +396,7 @@ class BaseGame(object):
             q=self.queued
             self.queued=""
             await self.channel.send(q)
-    async def run_pseudocommand(self, cmd, players=None):
+    async def run_pseudocommand(self, cmd, players=None, oneshot = False):
         total_args = len(cmd.__annotations__)
         tchannel = self.channel
         players = players or self.players
@@ -425,7 +431,10 @@ class BaseGame(object):
                     #     await self.send(f"AAH I CAN'T DEAL WITH THIS {repr(t)}")
                     #     break
                 else:
-                    asyncio.create_task(cmd(*args))
+                    if oneshot:
+                        asyncio.create_task(cmd(*args))
+                    elif await cmd(*args):
+                        return
     @property
     def ashamed(self):
         return [p for p in self.players if p.busy]
